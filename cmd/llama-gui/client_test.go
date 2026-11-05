@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -91,7 +92,7 @@ func TestStatusWithNothingListening(t *testing.T) {
 }
 
 func TestAddrFromEnv(t *testing.T) {
-	f := newFakeAPI(t, map[string]string{"GET /api/v1/models": `{"models":[]}`})
+	f := newFakeAPI(t, map[string]string{"GET /api/v1/library/local": `{"models":[]}`})
 	env := func(k string) string {
 		if k == "LLAMA_GUI_ADDR" {
 			return strings.TrimPrefix(f.srv.URL, "http://")
@@ -223,11 +224,11 @@ func TestLlamaUseAndRemove(t *testing.T) {
 
 func TestModelsCommand(t *testing.T) {
 	f := newFakeAPI(t, map[string]string{
-		"GET /api/v1/models":              `{"models":[{"id":"smol","status":"loaded"}]}`,
+		"GET /api/v1/library/local":       `{"models":[{"path":"smol.gguf","quant":"Q8_0","size_bytes":1610612736,"status":"loaded","router_id":"smol"},{"path":"other.gguf","status":"unloaded"}]}`,
 		"POST /api/v1/models/smol/load":   `{"id":"smol"}`,
 		"POST /api/v1/models/smol/unload": `{"id":"smol"}`,
 	})
-	if code, out, _ := f.run("models", "list"); code != 0 || !strings.Contains(out, "smol") || !strings.Contains(out, "loaded") {
+	if code, out, _ := f.run("models", "list"); code != 0 || !strings.Contains(out, "smol.gguf") || !strings.Contains(out, "1.5 GiB") || !strings.Contains(out, "loaded") {
 		t.Errorf("%d %q", code, out)
 	}
 	for _, sub := range []string{"load", "unload"} {
@@ -238,7 +239,70 @@ func TestModelsCommand(t *testing.T) {
 	if code, _, errOut := f.run("models", "load", "other"); code != 1 || !strings.Contains(errOut, "no such route") {
 		t.Errorf("%d %q", code, errOut)
 	}
-	if code, _, errOut := f.run("models", "pull", "x"); code != 2 || !strings.Contains(errOut, "M7") {
+	for _, args := range [][]string{{"models", "pull"}, {"models", "rm"}, {"models", "rm", "a", "b"}} {
+		if code, _, errOut := f.run(args...); code != 2 || !strings.Contains(errOut, args[1]) {
+			t.Errorf("%v: %d %q", args, code, errOut)
+		}
+	}
+}
+
+func TestModelsPull(t *testing.T) {
+	saved := jobPoll
+	jobPoll = time.Millisecond
+	t.Cleanup(func() { jobPoll = saved })
+	const running = `{"jobs":[{"id":"dl-1","state":"downloading","done":5,"total":10}]}`
+	f := newFakeAPI(t, map[string]string{
+		"GET /api/v1/library/repo?repo=u%2Fm": `{"repo":{"best":"b","variants":[{"id":"a","download_files":["a.gguf"]},{"id":"b","download_files":["b.gguf","mmproj.gguf"]}]}}`,
+		"POST /api/v1/library/downloads":      `{"id":"dl-1","state":"queued"}`,
+		"GET /api/v1/library/downloads":       running,
+	})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			f.mu.Lock()
+			polled := len(f.calls) > 2
+			if polled {
+				f.answers["GET /api/v1/library/downloads"] = `{"jobs":[{"id":"dl-1","state":"done"}]}`
+			}
+			f.mu.Unlock()
+			if polled {
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}()
+	code, out, errOut := f.run("models", "pull", "u/m")
+	<-done
+	if code != 0 || !strings.Contains(out, "downloading 50%") || !strings.Contains(out, "done") {
+		t.Errorf("%d %q %q", code, out, errOut)
+	}
+	if !slices.Contains(f.calls, `POST /api/v1/library/downloads {"files":["b.gguf","mmproj.gguf"],"repo":"u/m"}`) {
+		t.Errorf("calls %q", f.calls)
+	}
+
+	f.answers["GET /api/v1/library/downloads"] = `{"jobs":[{"id":"dl-1","state":"failed","error":"disk"}]}`
+	code, _, errOut = f.run("models", "pull", "u/m", "sub/x.gguf")
+	if code != 1 || !strings.Contains(errOut, "disk") {
+		t.Errorf("%d %q", code, errOut)
+	}
+	if !slices.Contains(f.calls, `POST /api/v1/library/downloads {"files":["sub/x.gguf"],"repo":"u/m"}`) {
+		t.Errorf("calls %q", f.calls)
+	}
+
+	f.status["POST /api/v1/library/downloads"] = http.StatusUnauthorized
+	f.answers["POST /api/v1/library/downloads"] = `{"error":"a token may be required"}`
+	if code, _, errOut := f.run("models", "pull", "u/m", "x.gguf"); code != 1 || !strings.Contains(errOut, "token") {
+		t.Errorf("%d %q", code, errOut)
+	}
+}
+
+func TestModelsRm(t *testing.T) {
+	f := newFakeAPI(t, map[string]string{"DELETE /api/v1/library/local?path=a+b.gguf": `{"path":"a b.gguf"}`})
+	if code, out, errOut := f.run("models", "rm", "a b.gguf"); code != 0 || !strings.Contains(out, "removed a b.gguf") {
+		t.Errorf("%d %q %q", code, out, errOut)
+	}
+	if code, _, errOut := f.run("models", "rm", "other.gguf"); code != 1 || !strings.Contains(errOut, "no such route") {
 		t.Errorf("%d %q", code, errOut)
 	}
 }

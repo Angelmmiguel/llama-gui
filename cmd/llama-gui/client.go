@@ -530,7 +530,21 @@ func modelsCommand(args []string, getenv func(string) string, stdout, stderr io.
 	ctx := context.Background()
 	switch sub {
 	case "list":
-		return finish(stderr, c.listModels(ctx, stdout))
+		return finish(stderr, c.listLocalModels(ctx, stdout))
+	case "pull":
+		if len(rest) == 0 {
+			return usageError(stderr, "models pull needs a repository, such as user/repo")
+		}
+		return finish(stderr, c.pull(ctx, rest[0], rest[1:], stdout))
+	case "rm":
+		if len(rest) != 1 {
+			return usageError(stderr, "models rm needs a model path")
+		}
+		err := c.do(ctx, http.MethodDelete, "/library/local?path="+url.QueryEscape(rest[0]), nil, nil)
+		if err == nil {
+			_, _ = fmt.Fprintf(stdout, "removed %s\n", rest[0])
+		}
+		return finish(stderr, err)
 	case "load", "unload":
 		if len(rest) != 1 {
 			return usageError(stderr, "models %s needs a model id", sub)
@@ -540,26 +554,110 @@ func modelsCommand(args []string, getenv func(string) string, stdout, stderr io.
 			_, _ = fmt.Fprintf(stdout, "%s: %s requested\n", rest[0], sub)
 		}
 		return finish(stderr, err)
-	case "pull", "rm":
-		return usageError(stderr, "models %s arrives with the model library (M7)", sub)
 	}
 	return usageError(stderr, "unknown models subcommand %q", sub)
 }
 
-func (c *apiClient) listModels(ctx context.Context, w io.Writer) error {
+func (c *apiClient) listLocalModels(ctx context.Context, w io.Writer) error {
 	var out struct {
 		Models []struct {
-			ID     string `json:"id"`
-			Status string `json:"status"`
+			Path      string `json:"path"`
+			Quant     string `json:"quant"`
+			SizeBytes uint64 `json:"size_bytes"`
+			Status    string `json:"status"`
+			RouterID  string `json:"router_id"`
 		} `json:"models"`
 	}
-	if err := c.do(ctx, http.MethodGet, "/models", nil, &out); err != nil {
+	if err := c.do(ctx, http.MethodGet, "/library/local", nil, &out); err != nil {
 		return err
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "ID\tSTATUS")
+	_, _ = fmt.Fprintln(tw, "PATH\tQUANT\tSIZE\tSTATUS\tID")
 	for _, m := range out.Models {
-		_, _ = fmt.Fprintf(tw, "%s\t%s\n", m.ID, m.Status)
+		id := m.RouterID
+		if id == "" {
+			id = "-"
+		}
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%.1f GiB\t%s\t%s\n", m.Path, m.Quant, gib(m.SizeBytes), m.Status, id)
 	}
 	return tw.Flush()
+}
+
+type pullJob struct {
+	ID    string `json:"id"`
+	State string `json:"state"`
+	Done  int64  `json:"done"`
+	Total int64  `json:"total"`
+	Error string `json:"error"`
+}
+
+// bestFiles asks the service which files to pull when none are named.
+func (c *apiClient) bestFiles(ctx context.Context, repo string) ([]string, error) {
+	var out struct {
+		Repo struct {
+			Best     string `json:"best"`
+			Variants []struct {
+				ID            string   `json:"id"`
+				DownloadFiles []string `json:"download_files"`
+			} `json:"variants"`
+		} `json:"repo"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/library/repo?repo="+url.QueryEscape(repo), nil, &out); err != nil {
+		return nil, err
+	}
+	for _, v := range out.Repo.Variants {
+		if v.ID == out.Repo.Best {
+			return v.DownloadFiles, nil
+		}
+	}
+	return nil, fmt.Errorf("%s has no GGUF files", repo)
+}
+
+func (c *apiClient) pull(ctx context.Context, repo string, files []string, w io.Writer) error {
+	if len(files) == 0 {
+		var err error
+		if files, err = c.bestFiles(ctx, repo); err != nil {
+			return err
+		}
+	}
+	var job pullJob
+	body := map[string]any{"repo": repo, "files": files}
+	if err := c.do(ctx, http.MethodPost, "/library/downloads", body, &job); err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintf(w, "%s: pulling %s\n", job.ID, strings.Join(files, ", "))
+	last := ""
+	for {
+		var out struct {
+			Jobs []pullJob `json:"jobs"`
+		}
+		if err := c.do(ctx, http.MethodGet, "/library/downloads", nil, &out); err != nil {
+			return err
+		}
+		i := slices.IndexFunc(out.Jobs, func(j pullJob) bool { return j.ID == job.ID })
+		if i < 0 {
+			return fmt.Errorf("download %s is no longer known to the service", job.ID)
+		}
+		j := out.Jobs[i]
+		switch j.State {
+		case "done":
+			_, _ = fmt.Fprintf(w, "%s: done\n", j.ID)
+			return nil
+		case "failed", "canceled":
+			return fmt.Errorf("download %s %s: %s", j.ID, j.State, j.Error)
+		}
+		progress := j.State
+		if j.Total > 0 {
+			progress = fmt.Sprintf("%s %d%%", j.State, j.Done*100/j.Total)
+		}
+		if progress != last {
+			_, _ = fmt.Fprintf(w, "%s: %s\n", j.ID, progress)
+			last = progress
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(jobPoll):
+		}
+	}
 }

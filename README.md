@@ -141,7 +141,9 @@ llama-gui logs [-f]                 tail the llama-server log
 llama-gui llama list|available      installed and released versions
 llama-gui llama install <version>   download a build
 llama-gui llama use <version>       switch build and restart
-llama-gui models list|pull|rm       manage GGUF files
+llama-gui models list               GGUF files on disk and whether they are loaded
+llama-gui models pull <repo> [file...]  download from Hugging Face
+llama-gui models rm <path>          delete a model
 llama-gui models load|unload <id>   control the router
 llama-gui healthcheck               used by the image's HEALTHCHECK
 ```

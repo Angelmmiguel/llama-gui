@@ -45,7 +45,7 @@ func TestUsageAndExitCodes(t *testing.T) {
 		{[]string{"models", "explode"}, 2},
 		{[]string{"models", "load"}, 2},
 		{[]string{"models", "pull"}, 2},
-		{[]string{"models", "rm", "x"}, 2},
+		{[]string{"models", "rm"}, 2},
 		{[]string{"help"}, 0},
 		{[]string{"--help"}, 0},
 		{[]string{"serve", "--help"}, 0},

@@ -78,12 +78,14 @@ usage:
                                  download a build, waiting until it is done
   llama-gui llama use <version>  switch build and restart
   llama-gui llama remove <version>
-  llama-gui models list          the router's models
+  llama-gui models list          GGUF models on disk and whether they are loaded
+  llama-gui models pull <repo> [file...]
+                                 download from Hugging Face, waiting until it is done; with
+                                 no files, the largest quantisation that fits this machine
+  llama-gui models rm <path>     delete a model, by its path in the list
   llama-gui models load <id>
   llama-gui models unload <id>
   llama-gui version              print the version
-
-models pull and models rm arrive with the model library (M7).
 
 status, logs, llama and models talk to the local service; pass --addr or set
 LLAMA_GUI_ADDR if it is not on 127.0.0.1:8080.
