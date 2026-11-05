@@ -38,6 +38,37 @@ func repoInfo(repo string) library.RepoInfo {
 	}
 }
 
+func TestLibraryRepoWithADraftModel(t *testing.T) {
+	h := newHarness(t)
+	gpuMachine(h)
+	h.hub.repos["u/oss"] = library.RepoInfo{
+		SearchResult: library.SearchResult{Repo: "u/oss"},
+		Variants: []library.Variant{
+			{ID: "eagle3-oss-Q8_0", Quant: "Q8_0", SizeBytes: gib, Files: []library.File{{Name: "eagle3-oss-Q8_0.gguf", Size: gib}}},
+			{ID: "oss-MXFP4", Quant: "MXFP4", SizeBytes: 60 * gib, Files: []library.File{{Name: "oss-MXFP4.gguf", Size: 60 * gib}}},
+		},
+	}
+	_, body := h.sendJSON(t, http.MethodGet, "/api/v1/library/repo?repo=u/oss", "")
+	repo := body["repo"].(map[string]any)
+	if repo["best"] != "oss-MXFP4" {
+		t.Errorf("best %v", repo["best"])
+	}
+	if !slices.Contains(h.hub.calls, "meta eagle3-oss-Q8_0.gguf") || !slices.Contains(h.hub.calls, "meta oss-MXFP4.gguf") {
+		t.Errorf("calls %v", h.hub.calls)
+	}
+
+	h.hub.cands = []library.Candidate{{
+		CatalogEntry: library.CatalogEntry{Repo: "u/oss", Name: "oss"},
+		Variants:     h.hub.repos["u/oss"].Variants,
+	}}
+	_, body = h.sendJSON(t, http.MethodGet, "/api/v1/library/suggestions", "")
+	for _, s := range asList(t, body, "suggestions") {
+		if s["quant"] != "MXFP4" {
+			t.Errorf("suggested the draft model: %v", s)
+		}
+	}
+}
+
 func metaFixture() library.Metadata {
 	return library.Metadata{BlockCount: 32, HeadCount: 8, HeadCountKV: 8, EmbeddingLength: 2048, ParamCount: 7_000_000_000}
 }
@@ -258,6 +289,8 @@ func TestLibrarySearch(t *testing.T) {
 	h.hub.repos["u/m"] = repoInfo("u/m")
 	h.hub.meta = metaFixture()
 	first := library.Catalog()[0]
+	h.hub.repos[first.Repo] = repoInfo(first.Repo)
+	h.hub.repos["u/embed"] = repoInfo("u/embed")
 	h.hub.cands = []library.Candidate{
 		{CatalogEntry: first, Variants: repoInfo("").Variants, Meta: metaFixture()},
 		{CatalogEntry: library.CatalogEntry{Repo: "u/embed", Name: "embed", Tags: []string{"embedding"}}, Variants: repoInfo("").Variants},

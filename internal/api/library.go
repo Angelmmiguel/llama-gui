@@ -1,6 +1,7 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"io/fs"
@@ -353,53 +354,86 @@ func downloadOf(v library.Variant, mmproj []library.File) ([]string, int64) {
 	return files, size
 }
 
-// withFit adds everything that needs the repo's files and header. All quantisations
-// share an architecture, which is why one header serves every variant.
-func (row *repoJSON) withFit(info library.RepoInfo, meta library.Metadata, p fitParams) {
-	row.MMProj = info.MMProj
-	row.Variants = make([]variantJSON, 0, len(info.Variants))
-	for _, v := range info.Variants {
-		out := variantJSON{Variant: v, Fit: p.estimate(meta, v.SizeBytes)}
-		out.DownloadFiles, out.DownloadBytes = downloadOf(v, info.MMProj)
-		row.Variants = append(row.Variants, out)
-	}
-	row.Best = bestVariant(row.Variants)
+// variantStem is a variant's name without its quantisation. Variants share an
+// architecture only within a stem: a repo can also carry another model, such as the
+// small draft model next to gpt-oss.
+func variantStem(v library.Variant) string {
+	return strings.ReplaceAll(strings.ToLower(v.ID), strings.ToLower(v.Quant), "")
 }
 
-// bestVariant is the largest that fits entirely in memory, or else the smallest.
-// Variants arrive smallest first.
-func bestVariant(variants []variantJSON) string {
+// mainStem is the stem of the largest variant, which is the model the repo is about.
+func mainStem(variants []library.Variant) string {
 	if len(variants) == 0 {
 		return ""
 	}
-	best := variants[0].ID
+	return variantStem(slices.MaxFunc(variants, func(a, b library.Variant) int { return cmp.Compare(a.SizeBytes, b.SizeBytes) }))
+}
+
+// bestVariant is the largest of the main model that fits entirely in memory, or
+// else its smallest. Variants arrive smallest first.
+func bestVariant(variants []variantJSON, main string) string {
+	best := ""
 	for _, v := range variants {
-		if v.Fit.Verdict == library.VerdictFitsGPU || v.Fit.Verdict == library.VerdictFitsRAM {
+		if variantStem(v.Variant) != main {
+			continue
+		}
+		if best == "" || v.Fit.Verdict == library.VerdictFitsGPU || v.Fit.Verdict == library.VerdictFitsRAM {
 			best = v.ID
 		}
 	}
 	return best
 }
 
-// repoRow looks up a repo and reads its header. A header that can't be read only
-// costs the precision of the estimate, as the sizes alone still give a verdict.
+// repoRow looks up a repo and reads one header per model in it. A header that can't
+// be read only costs the precision of the estimate, as sizes still give a verdict.
 func (a *api) repoRow(ctx context.Context, repo string, p fitParams) (repoJSON, error) {
 	info, err := a.Hub.Repo(ctx, repo)
 	if err != nil {
 		return repoJSON{}, err
 	}
 	row := newRepoRow(info.SearchResult, library.Catalog())
-	var meta library.Metadata
-	if len(info.Variants) > 0 {
-		if meta, err = a.Hub.ReadRemoteMetadata(ctx, repo, info.Variants[0].Files[0].Name); err == nil {
-			row.Metadata = &meta
-		} else {
-			a.log.Debug("reading remote metadata", "repo", repo, "error", err)
-			row.MetadataError = metadataMessage(err)
+	row.MMProj = info.MMProj
+	row.Variants = make([]variantJSON, 0, len(info.Variants))
+	main := mainStem(info.Variants)
+	metas := map[string]library.Metadata{}
+	for _, v := range info.Variants {
+		stem := variantStem(v)
+		meta, read := metas[stem]
+		if !read {
+			meta, err = a.Hub.ReadRemoteMetadata(ctx, repo, v.Files[0].Name)
+			metas[stem] = meta
+			switch {
+			case err == nil && stem == main:
+				row.Metadata = &meta
+			case err != nil && stem == main:
+				a.log.Debug("reading remote metadata", "repo", repo, "error", err)
+				row.MetadataError = metadataMessage(err)
+			}
 		}
+		out := variantJSON{Variant: v, Fit: p.estimate(meta, v.SizeBytes)}
+		out.DownloadFiles, out.DownloadBytes = downloadOf(v, info.MMProj)
+		row.Variants = append(row.Variants, out)
 	}
-	row.withFit(info, meta, p)
+	row.Best = bestVariant(row.Variants, main)
 	return row, nil
+}
+
+// mainCandidate narrows a catalog candidate to the model it is about, with that
+// model's header, so a repo's draft model is neither suggested nor judged by.
+func (a *api) mainCandidate(ctx context.Context, c library.Candidate) library.Candidate {
+	main := mainStem(c.Variants)
+	sameHeader := len(c.Variants) == 0 || variantStem(c.Variants[0]) == main
+	c.Variants = slices.DeleteFunc(slices.Clone(c.Variants), func(v library.Variant) bool { return variantStem(v) != main })
+	if sameHeader {
+		return c
+	}
+	if meta, err := a.Hub.ReadRemoteMetadata(ctx, c.Repo, c.Variants[0].Files[0].Name); err == nil {
+		c.Meta = meta
+	} else {
+		a.log.Debug("reading remote metadata", "repo", c.Repo, "error", err)
+		c.Meta = library.Metadata{}
+	}
+	return c
 }
 
 func metadataMessage(err error) string {
@@ -480,20 +514,16 @@ func (a *api) searchCatalog(w http.ResponseWriter, r *http.Request, filter strin
 		a.failLibrary(w, err)
 		return
 	}
-	catalog := library.Catalog()
 	rows := make([]repoJSON, 0, len(cands))
 	for _, c := range cands {
 		if filter != "" && !slices.Contains(c.Tags, filter) {
 			continue
 		}
-		// Candidates leave out the mmproj files; the hub client has them cached.
-		info, err := a.Hub.Repo(ctx, c.Repo)
+		// The hub client has what resolving the catalog just read cached.
+		row, err := a.repoRow(ctx, c.Repo, p)
 		if err != nil {
-			info = library.RepoInfo{SearchResult: library.SearchResult{Repo: c.Repo}, Variants: c.Variants}
+			continue
 		}
-		row := newRepoRow(info.SearchResult, catalog)
-		row.Metadata = &c.Meta
-		row.withFit(info, c.Meta, p)
 		rows = append(rows, row)
 	}
 	WriteJSON(w, http.StatusOK, map[string]any{"source": "catalog", "results": rows, "hardware": p.hw})
@@ -519,6 +549,9 @@ func (a *api) librarySuggestions(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		a.failLibrary(w, err)
 		return
+	}
+	for i, c := range cands {
+		cands[i] = a.mainCandidate(ctx, c)
 	}
 	out := []suggestionJSON{}
 	for _, s := range library.Suggest(cands, p.hw, p.ctx, p.kv) {
