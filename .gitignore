@@ -31,6 +31,25 @@ go.work.sum
 
 # Go caches, kept inside the project by the Nix shell
 .go/
+/bin/
+
+# Local state written by `just serve`
+/tmp/
+
+# Nix / direnv
+result
+.direnv/
+
+# Node
+web/node_modules/
+web/.svelte-kit/
+web/build/*
+!web/build/.gitkeep
+web/vite.config.ts.timestamp-*
+
+# Playwright
+web/test-results/
+web/playwright-report/
 
 # Editor/IDE
 # .idea/
