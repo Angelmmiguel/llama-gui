@@ -69,6 +69,26 @@ func TestLibraryRepoWithADraftModel(t *testing.T) {
 	}
 }
 
+func TestLibraryRepoWithAQuantInADirectory(t *testing.T) {
+	h := newHarness(t)
+	gpuMachine(h)
+	h.hub.meta = metaFixture()
+	h.hub.repos["u/m"] = library.RepoInfo{
+		SearchResult: library.SearchResult{Repo: "u/m"},
+		Variants: []library.Variant{
+			{ID: "m-Q8_0", Quant: "Q8_0", SizeBytes: 10 * gib, Files: []library.File{{Name: "m-Q8_0.gguf", Size: 10 * gib}}},
+			{ID: "BF16/m-BF16", Quant: "BF16", SizeBytes: 90 * gib, Shards: 2, Files: []library.File{{Name: "BF16/m-BF16-00001-of-00002.gguf", Size: 45 * gib}}},
+		},
+	}
+	_, body := h.sendJSON(t, http.MethodGet, "/api/v1/library/repo?repo=u/m", "")
+	if repo := body["repo"].(map[string]any); repo["best"] != "m-Q8_0" {
+		t.Errorf("best %v", repo["best"])
+	}
+	if n := len(h.hub.calls); n != 2 {
+		t.Errorf("one header is enough: %v", h.hub.calls)
+	}
+}
+
 func metaFixture() library.Metadata {
 	return library.Metadata{BlockCount: 32, HeadCount: 8, HeadCountKV: 8, EmbeddingLength: 2048, ParamCount: 7_000_000_000}
 }

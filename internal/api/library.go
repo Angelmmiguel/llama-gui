@@ -356,9 +356,10 @@ func downloadOf(v library.Variant, mmproj []library.File) ([]string, int64) {
 
 // variantStem is a variant's name without its quantisation. Variants share an
 // architecture only within a stem: a repo can also carry another model, such as the
-// small draft model next to gpt-oss.
+// small draft model next to gpt-oss. Large quantisations often sit in a directory
+// of their own, which the base name leaves out.
 func variantStem(v library.Variant) string {
-	return strings.ReplaceAll(strings.ToLower(v.ID), strings.ToLower(v.Quant), "")
+	return strings.ReplaceAll(strings.ToLower(path.Base(v.ID)), strings.ToLower(v.Quant), "")
 }
 
 // mainStem is the stem of the largest variant, which is the model the repo is about.
