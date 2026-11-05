@@ -199,6 +199,8 @@ func Handler(deps Deps) http.Handler {
 		"PUT /profiles/{id}":         a.updateProfile,
 		"DELETE /profiles/{id}":      a.deleteProfile,
 		"GET /profiles/{id}/command": a.profileCommand,
+		"POST /profiles/preview":     a.previewProfile,
+		"POST /profiles/estimate":    a.estimateProfile,
 
 		"GET /models":              a.listModels,
 		"POST /models/{id}/load":   a.loadModel,

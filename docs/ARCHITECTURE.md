@@ -145,6 +145,8 @@ meaning: 404, 401 when a token may be needed, 429 with `Retry-After` when known,
 | `POST /builds/{id}/activate` · `DELETE /builds/{id}` | Switch, answering 202 while the router restarts; remove |
 | `GET,POST /profiles` · `GET,PUT,DELETE /profiles/{id}` | `{profiles, skipped}`; bad input is a 400 with the message, a duplicate alias a 409. Changes reach a running router through `/models?reload=1` |
 | `GET /profiles/{id}/command` | `{command}`, the equivalent command line |
+| `POST /profiles/preview` | Unsaved values as `{command, error}`: an invalid profile still renders, with the reason |
+| `POST /profiles/estimate` | Memory for unsaved values: `source` (`measured`, `scaled` from a measurement, `estimate`), `rough`, `layers`, `router_up`, `gpu` (null on CPU) and `ram` as `{capacity, other, weights, kv, compute}`, `verdict` (`fits`, `tight`, `over`), `verdict_on`, `free_bytes`. 404 when the file is not in the models directory |
 | `GET /models` · `POST /models/{id}/load` · `POST /models/{id}/unload` | `{models}`, empty while the router is down; 202 |
 | `GET /library/local?ctx=&kv=&parallel=` · `DELETE /library/local?path=` | `{models, hardware}`: the scan with `profile`, `router_id`, `status` and `fit`, measured once loaded. `ctx` is the total, `-c`. Delete answers 409 while the model is loaded |
 | `GET /library/search?q=&filter=&ctx=&kv=` | `{source, results, hardware}`. Source is `catalog` with no `q`, `repo` for a `user/repo` query, and `search` otherwise, which has no variants. `filter` is chat, vision, embedding, code or moe |
