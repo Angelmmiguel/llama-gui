@@ -34,6 +34,7 @@ its `reaper` subpackage has no dependencies and is for anything that spawns a pr
 | `internal/profiles` | Profile model, validation, rendering to the router's preset INI |
 | `internal/builds` | Installed builds on `/builds`: install, probe, activate, remove, retention |
 | `internal/releases` | GitHub client: channels, tag classification, assets, compare |
+| `internal/library` | GGUF parsing, scan of `/models`, Hugging Face client, fit estimates, starter catalog, download queue |
 | `internal/hardware` | GPU, CPU, RAM and disk detection |
 | `internal/logs` | Parsing router output into structured lines and events, and the pipeline storing them |
 | `internal/llama` | Typed, tolerant HTTP client for the router's API |
@@ -128,7 +129,8 @@ Reaping peeks with `waitid(WNOWAIT)` and skips children started through `reaper.
 
 ## API
 
-JSON under `/api/v1`; errors are `{"error": "message"}` with a matching status.
+JSON under `/api/v1`; errors are `{"error": "message"}` with a matching status. Hugging Face failures keep their
+meaning: 404, 401 when a token may be needed, 429 with `Retry-After` when known, 504 on a timeout and otherwise 502.
 
 | Route | Purpose |
 | --- | --- |
@@ -143,6 +145,12 @@ JSON under `/api/v1`; errors are `{"error": "message"}` with a matching status.
 | `GET,POST /profiles` · `GET,PUT,DELETE /profiles/{id}` | `{profiles, skipped}`; bad input is a 400 with the message, a duplicate alias a 409. Changes reach a running router through `/models?reload=1` |
 | `GET /profiles/{id}/command` | `{command}`, the equivalent command line |
 | `GET /models` · `POST /models/{id}/load` · `POST /models/{id}/unload` | `{models}`, empty while the router is down; 202 |
+| `GET /library/local?ctx=&kv=&parallel=` · `DELETE /library/local?path=` | `{models, hardware}`: the scan with `profile`, `router_id`, `status` and `fit`, measured once loaded. `ctx` is the total, `-c`. Delete answers 409 while the model is loaded |
+| `GET /library/search?q=&filter=&ctx=&kv=` | `{source, results, hardware}`. Source is `catalog` with no `q`, `repo` for a `user/repo` query, and `search` otherwise, which has no variants. `filter` is chat, vision, embedding, code or moe |
+| `GET /library/repo?repo=&ctx=&kv=` | `{repo, hardware}`: `variants` with `fit` and `download_files` (the mmproj included), `best`, `metadata` read with range requests and cached, or `metadata_error` with estimated fits |
+| `GET /library/suggestions?ctx=&kv=` | `{suggestions, hardware}` from the starter catalog |
+| `GET,POST /library/downloads` · `DELETE /library/downloads/{id}?remove_partials=` | `{jobs}` with progress; `{repo, files}` answers 202 with the job, 409 if already on disk or queued, 507 without the space; cancel, keeping partials to resume unless told otherwise |
+| `GET /library/disk` | `{path, gguf_bytes, free_bytes, total_bytes}` |
 | `GET /slots` · `POST /slots/{model}/{slot}/{action}` | `{models, in_flight, time}`; action is save or restore with `{filename}`, erase or cancel. A filename is a single path element |
 | `GET /requests?since=&until=&model=&endpoint=&status=&limit=&cursor=&format=csv` | `{requests, next_cursor}`, or CSV. `status` is a class such as `2xx`; `endpoint` takes a comma-separated list |
 | `GET /requests/summary` | Same filters, default last hour: `kpis`, `ttft` and `total` percentiles, `statuses`, per-model `models` medians, `scatter` (newest 500), `truncated` |

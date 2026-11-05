@@ -9,12 +9,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/Angelmmiguel/llama-gui/internal/builds"
 	"github.com/Angelmmiguel/llama-gui/internal/hardware"
+	"github.com/Angelmmiguel/llama-gui/internal/library"
 	"github.com/Angelmmiguel/llama-gui/internal/llama"
 	"github.com/Angelmmiguel/llama-gui/internal/logs"
 	"github.com/Angelmmiguel/llama-gui/internal/profiles"
@@ -182,6 +184,59 @@ func (f *fakeRouter) SlotAction(_ context.Context, model string, slot int, actio
 	return map[string]any{"id_slot": slot}, f.err
 }
 
+// fakeHub answers from memory. err fails everything, and metaErr only the headers.
+type fakeHub struct {
+	repos   map[string]library.RepoInfo
+	meta    library.Metadata
+	metaErr error
+	results []library.SearchResult
+	cands   []library.Candidate
+	err     error
+	calls   []string
+}
+
+func newFakeHub() *fakeHub { return &fakeHub{repos: map[string]library.RepoInfo{}} }
+
+func (f *fakeHub) Search(_ context.Context, query, filter string, _ int) ([]library.SearchResult, error) {
+	f.calls = append(f.calls, "search "+query+" "+filter)
+	return f.results, f.err
+}
+func (f *fakeHub) Repo(_ context.Context, repo string) (library.RepoInfo, error) {
+	f.calls = append(f.calls, "repo "+repo)
+	if f.err != nil {
+		return library.RepoInfo{}, f.err
+	}
+	info, ok := f.repos[repo]
+	if !ok {
+		return info, library.ErrNotFound
+	}
+	return info, nil
+}
+func (f *fakeHub) ReadRemoteMetadata(_ context.Context, _, file string) (library.Metadata, error) {
+	f.calls = append(f.calls, "meta "+file)
+	if f.metaErr != nil {
+		return library.Metadata{}, f.metaErr
+	}
+	return f.meta, nil
+}
+func (f *fakeHub) Candidates(context.Context) ([]library.Candidate, error) { return f.cands, f.err }
+
+type fakeDownloads struct {
+	jobs  []library.Job
+	err   error
+	calls []string
+}
+
+func (f *fakeDownloads) Enqueue(_ context.Context, repo string, files ...string) (library.Job, error) {
+	f.calls = append(f.calls, "enqueue "+repo+" "+strings.Join(files, ","))
+	return library.Job{ID: "dl-1", Repo: repo, Files: files, State: library.JobQueued}, f.err
+}
+func (f *fakeDownloads) List() []library.Job { return f.jobs }
+func (f *fakeDownloads) Cancel(id string, remove bool) error {
+	f.calls = append(f.calls, "cancel "+id+" "+strconv.FormatBool(remove))
+	return f.err
+}
+
 type fakeTelemetry struct {
 	snap *telemetry.Snapshot
 	ch   chan *telemetry.Snapshot
@@ -218,6 +273,11 @@ type harness struct {
 	store     *store.Store
 	cancelled []string
 	done      chan struct{}
+	hub       *fakeHub
+	downloads *fakeDownloads
+	models    string
+	hw        hardware.Snapshot
+	reloads   int
 	handler   http.Handler
 }
 
@@ -239,6 +299,10 @@ func newHarness(t *testing.T) *harness {
 		tail:      &fakeTail{ch: make(chan logs.Item, 8), stopped: make(chan struct{})},
 		store:     st,
 		done:      make(chan struct{}),
+		hub:       newFakeHub(),
+		downloads: &fakeDownloads{},
+		models:    t.TempDir(),
+		hw:        hardware.Snapshot{CPU: hardware.CPU{Model: "x"}},
 	}
 	h.handler = Handler(testDeps(h))
 	return h
@@ -262,9 +326,14 @@ func (h *harness) deps() Deps {
 			h.cancelled = append(h.cancelled, model)
 			return model != "idle"
 		},
-		Hardware: func(context.Context) hardware.Snapshot { return hardware.Snapshot{CPU: hardware.CPU{Model: "x"}} },
-		Updates:  func(context.Context) builds.UpdateInfo { return builds.UpdateInfo{Available: true, Latest: "v2"} },
-		Done:     h.done,
+		Hardware:     func(context.Context) hardware.Snapshot { return h.hw },
+		Hub:          h.hub,
+		Downloads:    h.downloads,
+		ModelsDir:    h.models,
+		MemoryMargin: 2048,
+		ReloadModels: func(context.Context) { h.reloads++ },
+		Updates:      func(context.Context) builds.UpdateInfo { return builds.UpdateInfo{Available: true, Latest: "v2"} },
+		Done:         h.done,
 	}
 }
 

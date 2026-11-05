@@ -17,6 +17,7 @@ import (
 
 	"github.com/Angelmmiguel/llama-gui/internal/builds"
 	"github.com/Angelmmiguel/llama-gui/internal/hardware"
+	"github.com/Angelmmiguel/llama-gui/internal/library"
 	"github.com/Angelmmiguel/llama-gui/internal/llama"
 	"github.com/Angelmmiguel/llama-gui/internal/logs"
 	"github.com/Angelmmiguel/llama-gui/internal/profiles"
@@ -104,6 +105,23 @@ type Tailer interface {
 	Tail(ctx context.Context, f store.LogFilter) ([]store.LogLine, <-chan logs.Item, func(), error)
 }
 
+// Hub is Hugging Face, as far as the Library asks it anything.
+type Hub interface {
+	Search(ctx context.Context, query, filter string, limit int) ([]library.SearchResult, error)
+	Repo(ctx context.Context, repo string) (library.RepoInfo, error)
+	ReadRemoteMetadata(ctx context.Context, repo, file string) (library.Metadata, error)
+	// Candidates is the starter catalog resolved against the hub, failing only when
+	// the hub could answer for none of it.
+	Candidates(ctx context.Context) ([]library.Candidate, error)
+}
+
+// Downloads is the queue of models being downloaded.
+type Downloads interface {
+	Enqueue(ctx context.Context, repo string, files ...string) (library.Job, error)
+	List() []library.Job
+	Cancel(id string, removePartials bool) error
+}
+
 // Deps is what the handlers need from the rest of the service.
 type Deps struct {
 	Version string
@@ -111,9 +129,13 @@ type Deps struct {
 	Capture string
 	// LogVerbosity is the -lv level the router runs with.
 	LogVerbosity int
-	Started      time.Time
-	Now          func() time.Time
-	Logger       *slog.Logger
+	// MemoryMargin is the MiB kept free, which fit verdicts count as headroom.
+	MemoryMargin int
+	// ModelsDir is the GGUF directory.
+	ModelsDir string
+	Started   time.Time
+	Now       func() time.Time
+	Logger    *slog.Logger
 
 	Server    Server
 	Builds    Builds
@@ -122,6 +144,10 @@ type Deps struct {
 	Store     Store
 	Telemetry Telemetry
 	Tail      Tailer
+	Hub       Hub
+	Downloads Downloads
+	// ReloadModels makes a running router rescan the models directory.
+	ReloadModels func(ctx context.Context)
 	// Router returns the router's client, or false while it is not running.
 	Router func() (Router, bool)
 	// CancelSlot closes the request occupying a slot, reporting whether there was one.
@@ -174,6 +200,16 @@ func Handler(deps Deps) http.Handler {
 		"GET /models":              a.listModels,
 		"POST /models/{id}/load":   a.loadModel,
 		"POST /models/{id}/unload": a.unloadModel,
+
+		"GET /library/local":             a.libraryLocal,
+		"DELETE /library/local":          a.libraryDelete,
+		"GET /library/search":            a.librarySearch,
+		"GET /library/repo":              a.libraryRepo,
+		"GET /library/suggestions":       a.librarySuggestions,
+		"GET /library/disk":              a.libraryDisk,
+		"GET /library/downloads":         a.listDownloads,
+		"POST /library/downloads":        a.createDownload,
+		"DELETE /library/downloads/{id}": a.cancelDownload,
 
 		"GET /slots":                          a.listSlots,
 		"POST /slots/{model}/{slot}/{action}": a.slotAction,
