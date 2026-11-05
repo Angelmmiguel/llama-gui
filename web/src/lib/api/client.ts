@@ -71,6 +71,18 @@ export interface ServerStatus {
 	active_build?: { id: string; tag: string; backend: string } | null;
 	models_loaded?: number;
 	update_available?: boolean;
+	update?: UpdateInfo;
+}
+
+/** What the last look at upstream's releases found. */
+export interface UpdateInfo {
+	available: boolean;
+	/** The newer tag on the active build's channel. */
+	latest?: string;
+	stable?: string;
+	nightly?: string;
+	checked_at?: string;
+	error?: string;
 }
 
 export interface Gpu {
@@ -116,21 +128,43 @@ export interface BuildManifest {
 		build: string;
 		commit: string;
 		version_output: string;
-		flags: string[];
+		flags: string[] | null;
 		router: boolean;
-		devices: string[];
+		devices: string[] | null;
 	};
 	active?: boolean;
+	/** Says the build can run as a router. */
+	supported?: boolean;
+	/** On disk. */
+	size_bytes?: number;
+}
+
+/** A backend a release can be installed with. */
+export interface BuildOption {
+	backend: string;
+	asset: string;
+	/** The download in bytes, including the CUDA runtime. */
+	size: number;
+	variant?: string;
+	/** Why the hardware cannot use it, if it cannot. */
+	reason?: string;
 }
 
 export interface AvailableRelease {
 	tag: string;
-	binary_tag: string;
+	/** The b* tag holding the binaries; null until the release is resolved. */
+	binary_tag?: string | null;
 	channel: string;
 	published_at: string;
 	body: string;
-	assets: ReleaseAsset[];
-	[key: string]: unknown;
+	/** Only on each channel's newest and on an exact version. */
+	options?: BuildOption[] | null;
+}
+
+export interface BuildComparison {
+	ahead_by: number;
+	/** Oldest first, and possibly fewer than `ahead_by`. */
+	commits: { sha: string; title: string }[] | null;
 }
 
 export interface InstallJob {
@@ -176,6 +210,53 @@ export interface Profile {
 	idle_unload_seconds?: number;
 	on_demand?: boolean;
 	extra_args?: string[];
+}
+
+/** Something the preset left out. `flag` is empty when the whole profile was dropped. */
+export interface SkippedFlag {
+	alias: string;
+	flag?: string;
+	reason: string;
+}
+
+export interface ProfileMemoryUse {
+	capacity: number;
+	/** Other loaded models for VRAM, everything else in use for RAM. */
+	other: number;
+	weights: number;
+	kv: number;
+	compute: number;
+}
+
+export interface ProfileEstimate {
+	/** `measured` by the router, `scaled` from its measurement, or a plain `estimate`. */
+	source: string;
+	/** The file's metadata was incomplete, so KV is a rule of thumb. */
+	rough: boolean;
+	/** The model's layer count, 0 when unknown. */
+	layers: number;
+	/** False when other loaded models are unknown rather than none. */
+	router_up: boolean;
+	/** Null when the model would run on the CPU. */
+	gpu: ProfileMemoryUse | null;
+	ram: ProfileMemoryUse;
+	/** fits, tight or over. */
+	verdict: string;
+	/** gpu or ram. */
+	verdict_on: string;
+	free_bytes: number;
+}
+
+export interface LocalModelFile {
+	id: string;
+	name: string;
+	/** A file or a directory, relative to the models directory. */
+	path: string;
+	quant?: string;
+	/** Names of the files; a directory's are relative to it. */
+	files: string[];
+	mmproj?: string;
+	shards?: number;
 }
 
 export interface MemoryDevice {
@@ -395,6 +476,143 @@ export interface LogVolume {
 	today: { warn: number; error: number };
 }
 
+/** What verdicts are judged against. */
+export interface LibraryHardware {
+	/** Zero without a GPU, which makes verdicts about RAM. */
+	vram_bytes: number;
+	ram_bytes: number;
+	headroom_bytes: number;
+}
+
+export interface LibraryFit {
+	weights_bytes: number;
+	kv_bytes: number;
+	compute_bytes: number;
+	total_bytes: number;
+	/** fits_gpu, partial_offload, offload_experts, fits_ram or too_large; tolerate others. */
+	verdict: string;
+	/** Share of the total that spills to RAM. */
+	offload_percent: number;
+	moe: boolean;
+	/** The KV size is a rule of thumb, as the header was incomplete or unreadable. */
+	estimated: boolean;
+	/** The numbers are the router's measurements of the loaded model. */
+	calibrated: boolean;
+}
+
+export interface GgufMetadata {
+	architecture: string;
+	name: string;
+	param_count: number;
+	block_count: number;
+	context_length: number;
+	expert_count: number;
+	is_moe: boolean;
+	[key: string]: unknown;
+}
+
+export interface LocalModel {
+	id: string;
+	name: string;
+	/** Relative to the models directory. */
+	path: string;
+	size_bytes: number;
+	quant: string;
+	files: string[];
+	mmproj?: string;
+	shards: number;
+	metadata?: GgufMetadata;
+	mod_time: string;
+	/** What makes the model loadable. */
+	profile: { id: string; alias: string; ctx_size: number; parallel: number } | null;
+	/** Its name at the router. */
+	router_id?: string;
+	/** unloaded, loading, loaded or sleeping; tolerate others. */
+	status: string;
+	fit: LibraryFit;
+}
+
+export interface RepoFile {
+	name: string;
+	size: number;
+	sha256?: string;
+}
+
+export interface RepoVariant {
+	id: string;
+	quant: string;
+	files: RepoFile[];
+	size_bytes: number;
+	shards: number;
+	fit: LibraryFit;
+	/** The variant's files plus the mmproj a multimodal model needs. */
+	download_files: string[];
+	download_bytes: number;
+}
+
+export interface RepoRow {
+	repo: string;
+	name: string;
+	author: string;
+	downloads: number;
+	likes: number;
+	last_modified: string;
+	gated: boolean;
+	tags: string[];
+	description?: string;
+	catalog: boolean;
+	/** Absent from a plain search, as they cost hub calls per repo: see getLibraryRepo. */
+	variants?: RepoVariant[];
+	mmproj?: RepoFile[];
+	metadata?: GgufMetadata;
+	metadata_error?: string;
+	/** The id of the largest variant that fits, or else the smallest. */
+	best?: string;
+}
+
+export interface LibrarySuggestion {
+	/** largest_dense, fast_long_context or most_capable_offload; tolerate others. */
+	category: string;
+	repo: string;
+	name: string;
+	quant: string;
+	fit: LibraryFit;
+	tags: string[];
+	note: string;
+	metadata: GgufMetadata;
+	download_files: string[];
+	download_bytes: number;
+}
+
+export interface DownloadJob {
+	id: string;
+	repo: string;
+	variant: string;
+	files: string[];
+	/** queued, downloading, done, failed or canceled; tolerate others. */
+	state: string;
+	done: number;
+	total: number;
+	bytes_per_sec: number;
+	/** Zero when unknown. */
+	eta_seconds: number;
+	error?: string;
+}
+
+export interface LibraryDisk {
+	path: string;
+	gguf_bytes: number;
+	free_bytes: number;
+	total_bytes: number;
+}
+
+export interface FitQuery extends Query {
+	/** Total context, -c. */
+	ctx?: number;
+	kv?: string;
+	parallel?: number;
+}
+
 export interface TelemetrySnapshot {
 	time: string;
 	server: { state: string; error?: string };
@@ -428,18 +646,41 @@ export const getStatus = (signal?: AbortSignal) =>
 	request<ServerStatus>('GET', '/status', { signal });
 export const getHardware = () => request<Hardware>('GET', '/hardware');
 
-export const listBuilds = () => request<BuildManifest[]>('GET', '/builds');
-export const listAvailableBuilds = (channel?: string) =>
-	request<AvailableRelease[]>('GET', '/builds/available', { query: { channel } });
+export const listBuilds = () =>
+	request<{ builds: BuildManifest[]; active: string }>('GET', '/builds');
+export const listAvailableBuilds = (channel?: string, limit?: number) =>
+	request<{ releases: AvailableRelease[] }>('GET', '/builds/available', {
+		query: { channel, limit }
+	}).then((r) => r.releases);
+/** One release by tag, with its backends. */
+export const getAvailableBuild = (version: string) =>
+	request<{ releases: AvailableRelease[] }>('GET', '/builds/available', {
+		query: { version }
+	}).then((r) => r.releases[0]);
+export const compareBuilds = (from: string, to: string) =>
+	request<BuildComparison>('GET', '/builds/compare', { query: { from, to } });
+export const checkForUpdates = () => request<UpdateInfo>('POST', '/builds/check');
 export const installBuild = (body: { version: string; backend: string }) =>
 	request<InstallJob>('POST', '/builds/install', { body });
-export const listBuildJobs = () => request<InstallJob[]>('GET', '/builds/jobs');
+export const listBuildJobs = () =>
+	request<{ jobs: InstallJob[] }>('GET', '/builds/jobs').then((r) => r.jobs);
+export const cancelBuildJob = (id: string) => request<unknown>('DELETE', `/builds/jobs/${enc(id)}`);
 export const activateBuild = (id: string) =>
 	request<unknown>('POST', `/builds/${enc(id)}/activate`);
 export const deleteBuild = (id: string) => request<unknown>('DELETE', `/builds/${enc(id)}`);
 
 export const listProfiles = () =>
 	request<{ profiles: Profile[] }>('GET', '/profiles').then((r) => r.profiles);
+/** The list with what the last render of the preset left out. */
+export const listProfilesDetail = () =>
+	request<{ profiles: Profile[]; skipped: SkippedFlag[] }>('GET', '/profiles');
+export const previewProfile = (body: Profile) =>
+	request<{ command: string; error?: string }>('POST', '/profiles/preview', { body });
+export const estimateProfile = (body: Profile) =>
+	request<ProfileEstimate>('POST', '/profiles/estimate', { body });
+/** The models on disk, as far as the profile form needs them. */
+export const listLocalModelFiles = () =>
+	request<{ models: LocalModelFile[] }>('GET', '/library/local').then((r) => r.models);
 export const createProfile = (body: Omit<Profile, 'id'> & { id?: string }) =>
 	request<Profile>('POST', '/profiles', { body });
 export const getProfile = (id: string) => request<Profile>('GET', `/profiles/${enc(id)}`);
@@ -451,6 +692,44 @@ export const listModels = () =>
 	request<{ models: RouterModel[] }>('GET', '/models').then((r) => r.models);
 export const loadModel = (id: string) => request<unknown>('POST', `/models/${enc(id)}/load`);
 export const unloadModel = (id: string) => request<unknown>('POST', `/models/${enc(id)}/unload`);
+
+export const getLibraryLocal = (query: FitQuery, signal?: AbortSignal) =>
+	request<{ models: LocalModel[]; hardware: LibraryHardware }>('GET', '/library/local', {
+		query,
+		signal
+	});
+export const deleteLocalModel = (path: string) =>
+	request<unknown>('DELETE', '/library/local', { query: { path } });
+export const searchLibrary = (
+	query: FitQuery & { q?: string; filter?: string },
+	signal?: AbortSignal
+) =>
+	request<{ source: string; results: RepoRow[]; hardware: LibraryHardware }>(
+		'GET',
+		'/library/search',
+		{ query, signal }
+	);
+export const getLibraryRepo = (repo: string, query: FitQuery, signal?: AbortSignal) =>
+	request<{ repo: RepoRow; hardware: LibraryHardware }>('GET', '/library/repo', {
+		query: { ...query, repo },
+		signal
+	});
+export const getLibrarySuggestions = (query: FitQuery, signal?: AbortSignal) =>
+	request<{ suggestions: LibrarySuggestion[]; hardware: LibraryHardware }>(
+		'GET',
+		'/library/suggestions',
+		{ query, signal }
+	);
+export const listDownloads = (signal?: AbortSignal) =>
+	request<{ jobs: DownloadJob[] }>('GET', '/library/downloads', { signal }).then((r) => r.jobs);
+export const startDownload = (repo: string, files: readonly string[]) =>
+	request<DownloadJob>('POST', '/library/downloads', { body: { repo, files } });
+export const cancelDownload = (id: string, removePartials: boolean) =>
+	request<unknown>('DELETE', `/library/downloads/${enc(id)}`, {
+		query: { remove_partials: removePartials }
+	});
+export const getLibraryDisk = (signal?: AbortSignal) =>
+	request<LibraryDisk>('GET', '/library/disk', { signal });
 
 export const listSlots = () =>
 	request<{ models: TelemetryModel[]; in_flight: InflightRequest[]; time: string }>(

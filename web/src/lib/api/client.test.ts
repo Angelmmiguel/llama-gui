@@ -29,7 +29,7 @@ describe('request', () => {
 	});
 
 	it('escapes ids and drops empty query values', async () => {
-		const fetchMock = respond(200, '');
+		const fetchMock = respond(200, '{"releases":[]}');
 		await slotAction('org/model', 2, 'erase');
 		expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/slots/org%2Fmodel/2/erase');
 		await listAvailableBuilds();
