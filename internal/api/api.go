@@ -180,6 +180,12 @@ func Handler(deps Deps) http.Handler {
 		"GET /requests":         a.listRequests,
 		"GET /requests/summary": a.requestSummary,
 		"GET /requests/{id}":    a.getRequest,
+
+		"GET /logs":          a.listLogs,
+		"GET /logs/stream":   a.streamLogs,
+		"GET /logs/volume":   a.logVolume,
+		"GET /logs/download": a.downloadLogs,
+		"GET /events":        a.listEvents,
 	} {
 		method, path, _ := strings.Cut(pattern, " ")
 		mux.HandleFunc(method+" /api/v1"+path, h)
