@@ -25,6 +25,8 @@
 		block?: boolean;
 		/** Renders a link that saves the target, for exports. */
 		downloadHref?: string;
+		/** Renders a link that looks like the button; pass a resolved path. */
+		href?: string;
 		children: Snippet;
 	}
 
@@ -37,6 +39,7 @@
 		fill = false,
 		block = false,
 		downloadHref,
+		href,
 		type = 'button',
 		children,
 		...rest
@@ -55,6 +58,9 @@
 {#if downloadHref}
 	<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- an API route, not a page. -->
 	<a href={downloadHref} download title={rest.title} class={classes}>{@render children()}</a>
+{:else if href}
+	<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- callers resolve the path -->
+	<a {href} title={rest.title} class={classes}>{@render children()}</a>
 {:else}
 	<button {type} {...rest} class={classes}>
 		{@render children()}
