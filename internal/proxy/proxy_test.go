@@ -1064,3 +1064,47 @@ func TestWithAutoloadCannotBeBypassed(t *testing.T) {
 		}
 	}
 }
+
+func TestPaused(t *testing.T) {
+	var hits atomic.Int32
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer up.Close()
+	target, err := url.Parse(up.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := &memSink{}
+	p := New(Options{
+		Upstream: func() (*url.URL, bool) { return target, true },
+		Sink:     sink,
+		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	send := func() *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		p.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"m"}`)))
+		return w
+	}
+
+	p.SetPaused("paused for a benchmark")
+	w := send()
+	if w.Code != http.StatusServiceUnavailable || w.Header().Get("Retry-After") != pausedRetryAfter {
+		t.Errorf("%d, Retry-After %q", w.Code, w.Header().Get("Retry-After"))
+	}
+	if !strings.Contains(w.Body.String(), "paused for a benchmark") {
+		t.Errorf("body %s", w.Body)
+	}
+	if hits.Load() != 0 {
+		t.Errorf("reached upstream %d times", hits.Load())
+	}
+	if recs := sink.wait(t, 1); recs[0].Status != http.StatusServiceUnavailable {
+		t.Errorf("record %+v", recs[0])
+	}
+
+	p.SetPaused("")
+	if w := send(); w.Code != http.StatusNoContent || hits.Load() != 1 {
+		t.Errorf("after resuming: %d, %d hits", w.Code, hits.Load())
+	}
+}

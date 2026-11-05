@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -22,7 +23,8 @@ const (
 	defaultMaxBody    = 64 << 20
 	defaultMaxCapture = 1 << 20
 	retryAfterSeconds = "5"
-	statusCancelled   = 499 // no status exists when the request ends before upstream answers
+	pausedRetryAfter  = "30" // a pause outlasts a restart by minutes
+	statusCancelled   = 499  // no status exists when the request ends before upstream answers
 )
 
 // Policy decides whether a request may load a model on demand.
@@ -49,6 +51,8 @@ type Proxy struct {
 	rp   *httputil.ReverseProxy
 	log  *slog.Logger
 	reg  registry
+	// paused holds why requests are being refused, nil while they are not.
+	paused atomic.Pointer[string]
 }
 
 type ctxKey struct{}
@@ -99,6 +103,14 @@ func New(opts Options) *Proxy {
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ex := &exchange{measured: isMeasured(r)}
 	ex.meter = meter{started: p.opts.Clock(), now: p.opts.Clock, capture: p.opts.Capture, maxCapture: p.opts.MaxBodyCapture}
+
+	if reason := p.paused.Load(); reason != nil {
+		ex.answered(http.StatusServiceUnavailable, "503 paused")
+		w.Header().Set("Retry-After", pausedRetryAfter)
+		writeError(w, http.StatusServiceUnavailable, "unavailable_error", *reason)
+		p.record(r, ex, nil)
+		return
+	}
 
 	upstream, ok := p.opts.Upstream()
 	if !ok {
@@ -298,6 +310,16 @@ func readsBody(r *http.Request) bool {
 	}
 	ct, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	return !strings.HasPrefix(ct, "multipart/") && !strings.HasPrefix(ct, "audio/") && ct != "application/octet-stream"
+}
+
+// SetPaused makes the proxy answer every request with a 503, Retry-After and this
+// reason, until it is called with an empty one. Requests already under way go on.
+func (p *Proxy) SetPaused(reason string) {
+	if reason == "" {
+		p.paused.Store(nil)
+		return
+	}
+	p.paused.Store(&reason)
 }
 
 // InFlight returns the requests in progress for a model, for the supervisor's idle check.

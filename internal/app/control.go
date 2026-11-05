@@ -43,6 +43,8 @@ type control struct {
 	hw     func(context.Context) hardware.Snapshot
 	keep   int
 	log    *slog.Logger
+	// benching says a benchmark is running; nil until the runner exists.
+	benching func() bool
 
 	// ctx bounds the background work, whose request has long been answered.
 	ctx    context.Context
@@ -109,6 +111,9 @@ func (c *control) Status() supervisor.Status { return c.sup.State() }
 
 // Start begins starting the router and returns.
 func (c *control) Start(ctx context.Context) error {
+	if err := c.requireNoBench(); err != nil {
+		return err
+	}
 	if err := c.requireBuild(ctx); err != nil {
 		return err
 	}
@@ -127,6 +132,9 @@ func (c *control) Stop(ctx context.Context) error { return c.sup.Stop(ctx) }
 
 // Restart begins replacing the router and returns.
 func (c *control) Restart(ctx context.Context) error {
+	if err := c.requireNoBench(); err != nil {
+		return err
+	}
 	if err := c.requireBuild(ctx); err != nil {
 		return err
 	}
@@ -195,6 +203,9 @@ func (c *control) applyRetention(ctx context.Context) {
 
 // Activate switches the active build and begins restarting the router on it.
 func (b liveBuilds) Activate(ctx context.Context, id string) error {
+	if err := b.c.requireNoBench(); err != nil {
+		return err
+	}
 	if err := b.Manager.Activate(ctx, id); err != nil {
 		return err
 	}

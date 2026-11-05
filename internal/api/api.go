@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Angelmmiguel/llama-gui/internal/bench"
 	"github.com/Angelmmiguel/llama-gui/internal/builds"
 	"github.com/Angelmmiguel/llama-gui/internal/hardware"
 	"github.com/Angelmmiguel/llama-gui/internal/library"
@@ -146,6 +147,7 @@ type Deps struct {
 	Tail      Tailer
 	Hub       Hub
 	Downloads Downloads
+	Bench     Bench
 	// ReloadModels makes a running router rescan the models directory.
 	ReloadModels func(ctx context.Context)
 	// Router returns the router's client, or false while it is not running.
@@ -232,6 +234,14 @@ func Handler(deps Deps) http.Handler {
 		"GET /telemetry":        a.telemetry,
 		"GET /telemetry/stream": a.streamTelemetry,
 
+		"GET /bench/runs":       a.listBenchRuns,
+		"POST /bench/runs":      a.startBenchRun,
+		"GET /bench/runs/{id}":  a.getBenchRun,
+		"GET /bench/current":    a.currentBenchRun,
+		"DELETE /bench/current": a.cancelBenchRun,
+		"POST /bench/estimate":  a.estimateBench,
+		"GET /bench/history":    a.benchHistory,
+
 		"POST /server/start":   a.serverStart,
 		"POST /server/stop":    a.serverStop,
 		"POST /server/restart": a.serverRestart,
@@ -303,13 +313,13 @@ func (a *api) fail(w http.ResponseWriter, err error) {
 	case errors.As(err, &tooBig):
 		status = http.StatusRequestEntityTooLarge
 	case errors.Is(err, store.ErrInvalidCursor), errors.Is(err, profiles.ErrInvalid),
-		errors.Is(err, builds.ErrInvalidID), errors.Is(err, builds.ErrInvalidBackend), errors.Is(err, releases.ErrInvalidTag):
+		errors.Is(err, builds.ErrInvalidID), errors.Is(err, builds.ErrInvalidBackend), errors.Is(err, releases.ErrInvalidTag), errors.Is(err, bench.ErrInvalid):
 		status = http.StatusBadRequest
 	case errors.Is(err, store.ErrNotFound), errors.Is(err, builds.ErrNotFound), errors.Is(err, builds.ErrJobNotFound),
-		errors.Is(err, releases.ErrNotFound), errors.Is(err, builds.ErrNoAsset):
+		errors.Is(err, releases.ErrNotFound), errors.Is(err, builds.ErrNoAsset), errors.Is(err, bench.ErrModel):
 		status = http.StatusNotFound
 	case errors.Is(err, store.ErrConflict), errors.Is(err, builds.ErrActiveBuild), errors.Is(err, builds.ErrUnsupportedBuild),
-		errors.Is(err, supervisor.ErrNoBuild):
+		errors.Is(err, supervisor.ErrNoBuild), errors.Is(err, bench.ErrBusy), errors.Is(err, bench.ErrNotRunning), errors.Is(err, bench.ErrUnsupported):
 		status = http.StatusConflict
 	case errors.Is(err, errNotRunning), errors.Is(err, builds.ErrClosed), errors.Is(err, supervisor.ErrStopped):
 		status = http.StatusServiceUnavailable

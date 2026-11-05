@@ -613,6 +613,84 @@ export interface FitQuery extends Query {
 	parallel?: number;
 }
 
+export interface BenchSetup {
+	/** Relative to the models directory. */
+	model_file: string;
+	/** on, off or auto. */
+	flash_attn: string[];
+	cache_types: string[];
+	depths: number[];
+	repetitions: number;
+	n_prompt?: number;
+	n_gen?: number;
+	ngl?: string;
+}
+
+export interface BenchEstimate {
+	tests: number;
+	seconds: number;
+	command: string;
+}
+
+export interface BenchResult {
+	backend: string;
+	ngl: string;
+	flash_attn: string;
+	cache_k: string;
+	cache_v: string;
+	/** pp512, tg128 @ d4096. */
+	test: string;
+	/** pp, tg or pg; tolerate others. */
+	kind: string;
+	n: number;
+	depth: number;
+	tokens_per_sec: number;
+	stddev: number;
+}
+
+export interface BenchLine {
+	label: string;
+	flash_attn: string;
+	cache_k: string;
+	cache_v: string;
+	backend: string;
+	ngl: string;
+	points: { depth: number; tokens_per_sec: number; stddev: number }[];
+}
+
+export interface BenchRun {
+	id: number;
+	/** running, done, failed or canceled. */
+	state: string;
+	setup: BenchSetup;
+	/** The build id. */
+	build: string;
+	started_at: string;
+	finished_at?: string;
+	done: number;
+	total: number;
+	/** The last finished test, or the phase before any has. */
+	current: string;
+	results: BenchResult[] | null;
+	error?: string;
+}
+
+export interface BenchRunDetail extends BenchRun {
+	series: { decode: BenchLine[]; prefill: BenchLine[] };
+	/** Only when the data supports one. */
+	takeaway?: string;
+	markdown: string;
+}
+
+export interface BenchBuildPoint {
+	build: string;
+	run_id: number;
+	started_at: string;
+	tokens_per_sec: number;
+	/** Null for the first build. */
+	delta_percent: number | null;
+}
+
 export interface TelemetrySnapshot {
 	time: string;
 	server: { state: string; error?: string };
@@ -760,6 +838,21 @@ export const listEvents = (since?: string) =>
 	request<{ events: ServerEvent[] }>('GET', '/events', { query: { since } });
 
 export const getTelemetry = () => request<TelemetrySnapshot>('GET', '/telemetry');
+
+export const listBenchRuns = (model: string) =>
+	request<{ runs: BenchRun[] }>('GET', '/bench/runs', { query: { model } }).then((r) => r.runs);
+export const getBenchRun = (id: number) => request<BenchRunDetail>('GET', `/bench/runs/${id}`);
+export const startBenchRun = (body: BenchSetup) =>
+	request<BenchRunDetail>('POST', '/bench/runs', { body });
+export const getCurrentBenchRun = (signal?: AbortSignal) =>
+	request<{ run: BenchRunDetail | null }>('GET', '/bench/current', { signal }).then((r) => r.run);
+export const cancelBenchRun = () => request<unknown>('DELETE', '/bench/current');
+export const estimateBench = (body: BenchSetup, signal?: AbortSignal) =>
+	request<BenchEstimate>('POST', '/bench/estimate', { body, signal });
+export const getBenchHistory = (model: string) =>
+	request<{ history: BenchBuildPoint[] }>('GET', '/bench/history', { query: { model } }).then(
+		(r) => r.history
+	);
 
 export const startServer = () => request<unknown>('POST', '/server/start');
 export const stopServer = () => request<unknown>('POST', '/server/stop');

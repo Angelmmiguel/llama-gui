@@ -18,6 +18,7 @@ import (
 
 	"github.com/Angelmmiguel/llama-gui/internal/api"
 	"github.com/Angelmmiguel/llama-gui/internal/app/reaper"
+	"github.com/Angelmmiguel/llama-gui/internal/bench"
 	"github.com/Angelmmiguel/llama-gui/internal/builds"
 	"github.com/Angelmmiguel/llama-gui/internal/config"
 	"github.com/Angelmmiguel/llama-gui/internal/hardware"
@@ -148,6 +149,34 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, ln net.Listen
 		Logger:   log,
 	})
 
+	failInterruptedRuns(ctx, st, time.Now(), log)
+	pause := &benchPause{
+		router: func() (benchRouter, bool) {
+			c, ok := clients.get()
+			if !ok {
+				return nil, false
+			}
+			return c, true
+		},
+		setPaused: px.SetPaused,
+		ctx:       ctrlCtx,
+		log:       log,
+		timeout:   benchUnloadTimeout,
+		poll:      benchUnloadPoll,
+		retry:     benchUnloadRetry,
+	}
+	runner := bench.NewRunner(bench.Options{
+		Binary: ctrl.benchBinary,
+		Models: cfg.Models,
+		Pause:  pause.pause,
+		Store:  st,
+		Logger: log,
+	})
+	ctrl.benching = func() bool {
+		run, ok := runner.Current()
+		return ok && run.State == bench.StateRunning
+	}
+
 	updates := builds.NewUpdateChecker(builds.UpdateOptions{
 		Policy:   cfg.LlamaUpdates,
 		Releases: rel,
@@ -155,8 +184,14 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, ln net.Listen
 		Install:  liveB.Install,
 		Wait:     mgr.Wait,
 		Activate: liveB.Activate,
-		InFlight: func() int { return len(px.List()) },
-		Logger:   log,
+		InFlight: func() int {
+			n := len(px.List())
+			if ctrl.benching() {
+				n++ // a switch restarts the router under the run
+			}
+			return n
+		},
+		Logger: log,
 	})
 
 	ctrl.applyActive(ctx)
@@ -185,13 +220,14 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, ln net.Listen
 		Tail:         pipe,
 		Hub:          libraryHub{hub},
 		Downloads:    downloads,
+		Bench:        runner,
 		ReloadModels: ctrl.reloadPreset,
 		Router: func() (api.Router, bool) {
 			c, ok := clients.get()
 			if !ok {
 				return nil, false
 			}
-			return c, true
+			return guardedRouter{c, ctrl}, true
 		},
 		CancelSlot:   px.Cancel,
 		Hardware:     detector.Detect,
@@ -225,6 +261,14 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, ln net.Listen
 	// The HTTP server has drained, so nothing can start new work from here on.
 	downloads.Close()
 	ctrl.close()
+	// After close, so a cancelled run finds no reason to reload models on the way out.
+	if err := runner.Cancel(); err == nil {
+		benchCtx, cancelBench := context.WithTimeout(context.Background(), benchStopTimeout)
+		defer cancelBench()
+		if err := runner.Wait(benchCtx); err != nil {
+			log.Warn("stopping llama-bench", "error", err)
+		}
+	}
 	mgr.Close()
 	stopCtx, cancelStop := context.WithTimeout(context.Background(), stopTimeout)
 	defer cancelStop()

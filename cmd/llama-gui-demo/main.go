@@ -21,6 +21,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -37,6 +38,41 @@ case "$*" in
     echo "1, NVIDIA GeForce RTX 4090, GPU-demo-1, 575.64, 24564, 17522, $u1, 64" ;;
   *) echo "| NVIDIA-SMI 575.64    Driver Version: 575.64    CUDA Version: 12.8 |" ;;
 esac
+`
+
+// fakeBench stands in for llama-bench. It honours the setup and times nothing:
+// each line is a real capture with the fields the setup decides replaced, so the
+// charts have what was asked for. @PERCENT@ makes one build faster than another.
+const fakeBench = `#!/bin/sh
+here=$(dirname "$0")
+case "$1" in --help) cat "$here/llama-bench.help"; exit 0 ;; esac
+p=512 n=128 fa=auto ctk=f16 ctv=f16 d=0
+while [ $# -gt 1 ]; do
+  case "$1" in
+    -p) p=$2 ;; -n) n=$2 ;; -fa) fa=$2 ;; -ctk) ctk=$2 ;; -ctv) ctv=$2 ;; -d) d=$2 ;;
+  esac
+  shift 2
+done
+template=$(head -n 1 "$here/llama-bench.jsonl")
+emit() { # n_prompt n_gen depth flash k v centi-tokens/s
+  printf '%s\n' "$template" | sed \
+    -e "s/\"backends\": \"[^\"]*\"/\"backends\": \"CUDA\"/" -e "s/\"n_gpu_layers\": [-0-9]*/\"n_gpu_layers\": 99/" \
+    -e "s/\"n_prompt\": [0-9]*/\"n_prompt\": $1/" -e "s/\"n_gen\": [0-9]*/\"n_gen\": $2/" -e "s/\"n_depth\": [0-9]*/\"n_depth\": $3/" \
+    -e "s/\"flash_attn\": [-0-9a-z]*/\"flash_attn\": $4/" -e "s/\"type_k\": \"[^\"]*\"/\"type_k\": \"$5\"/" -e "s/\"type_v\": \"[^\"]*\"/\"type_v\": \"$6\"/" \
+    -e "s/\"avg_ts\": [0-9.]*/\"avg_ts\": $(( $7 / 100 )).$(( $7 % 100 / 10 ))$(( $7 % 10 ))/" -e "s/\"stddev_ts\": [0-9.]*/\"stddev_ts\": 0.$(( $7 % 7 + 2 ))/"
+  sleep 0.15
+}
+cost() { case "$1" in q8_0) echo 2 ;; q4_0) echo 7 ;; *) echo 0 ;; esac; }
+IFS=,
+for a in $fa; do
+  case "$a" in on) flash=1 knee=65536 ;; off) flash=0 knee=26000 ;; *) flash=-1 knee=45000 ;; esac
+  for k in $ctk; do for v in $ctv; do for depth in $d; do
+    left=$(( (100 - $(cost "$k") - $(cost "$v")) * @PERCENT@ ))
+    fade=$(( knee * 1000 / (knee + depth) ))
+    emit "$p" 0 "$depth" "$flash" "$k" "$v" $(( 530000 * left / 10000 * fade / 1000 ))
+    emit 0 "$n" "$depth" "$flash" "$k" "$v" $(( 17000 * left / 10000 * fade / 1000 ))
+  done; done; done
+done
 `
 
 // demoModel is a sparse GGUF with realistic metadata and a realistic size.
@@ -91,8 +127,11 @@ func run(addr, dir string, traffic bool) error {
 		return err
 	}
 	var active string
-	for _, tag := range []string{"b12098", "b12110"} {
-		if active, err = installFake(buildsDir, filepath.Join(bin, "fake-llama-server"), tag); err != nil {
+	for _, b := range []struct {
+		tag     string
+		percent int
+	}{{"b12098", 91}, {"b12110", 100}} {
+		if active, err = installFake(buildsDir, filepath.Join(bin, "fake-llama-server"), b.tag, b.percent); err != nil {
 			return err
 		}
 	}
@@ -131,7 +170,7 @@ func run(addr, dir string, traffic bool) error {
 }
 
 // installFake puts the fake server where a real install would.
-func installFake(dir, binary, tag string) (string, error) {
+func installFake(dir, binary, tag string, benchPercent int) (string, error) {
 	id, err := builds.BuildID(tag, builds.BackendCUDA)
 	if err != nil {
 		return "", err
@@ -147,6 +186,9 @@ func installFake(dir, binary, tag string) (string, error) {
 	if err := os.Link(binary, server); err != nil {
 		return "", err
 	}
+	if err := installFakeBench(target, benchPercent); err != nil {
+		return "", err
+	}
 	man, err := json.Marshal(builds.Manifest{
 		ID: id, Tag: tag, ReleaseTag: tag, Channel: releases.ChannelNightly, Backend: builds.BackendCUDA, Variant: "12.8", Arch: builds.ArchX64,
 		InstalledAt: time.Now(),
@@ -156,6 +198,22 @@ func installFake(dir, binary, tag string) (string, error) {
 		return "", err
 	}
 	return id, os.WriteFile(filepath.Join(target, "manifest.json"), man, 0o600)
+}
+
+// installFakeBench copies the captures next to the script. They are read from the
+// source tree, which is also where this command builds the fake server from.
+func installFakeBench(target string, percent int) error {
+	for _, name := range []string{"llama-bench.jsonl", "help.txt"} {
+		data, err := os.ReadFile(filepath.Join("internal", "bench", "testdata", name))
+		if err != nil {
+			return fmt.Errorf("run the demo from the repository root: %w", err)
+		}
+		if err := os.WriteFile(filepath.Join(target, strings.Replace(name, "help.txt", "llama-bench.help", 1)), data, 0o600); err != nil {
+			return err
+		}
+	}
+	script := strings.ReplaceAll(fakeBench, "@PERCENT@", strconv.Itoa(percent))
+	return os.WriteFile(filepath.Join(target, "llama-bench"), []byte(script), 0o755) //nolint:gosec // an executable
 }
 
 var supportedFlags = []string{"--models-preset", "--ctx-size", "--parallel", "--n-gpu-layers", "--split-mode", "--tensor-split",

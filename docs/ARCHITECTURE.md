@@ -164,7 +164,13 @@ meaning: 404, 401 when a token may be needed, 429 with `Retry-After` when known,
 | `GET /logs/download` | Same filters as `/logs`, as text, oldest first |
 | `GET /events?since=` | `{events}`, newest first |
 | `GET /telemetry` · `GET /telemetry/stream` | Current snapshot, and SSE at 1 Hz |
-| `POST /server/{start,stop,restart}` | Router control. Start and restart answer 202 while it happens, or 409 with no build |
+| `GET /bench/runs?model=&limit=` | `{runs}`, newest first |
+| `POST /bench/runs` | Starts a run from a setup, `{model_file, flash_attn, cache_types, depths, repetitions, n_prompt, n_gen, ngl}`: a 202 with the run. Bad input is a 400, a missing model file a 404, and a run already going, no build or a build whose `llama-bench` lacks a flag a 409 |
+| `GET /bench/runs/{id}` | The run with `series` `{decode, prefill}`, `markdown` and, once it has ended and there is something to compare, `takeaway` |
+| `GET /bench/current` · `DELETE /bench/current` | `{run}`, as above: the running one or the last to finish this process, null before any. Delete cancels it, or answers 409 |
+| `POST /bench/estimate` | `{tests, seconds, command}` for a setup, without running anything |
+| `GET /bench/history?model=` | `{history}`, the best `tg128` at depth 0 per build, oldest first: `build`, `run_id`, `started_at`, `tokens_per_sec`, `delta_percent` |
+| `POST /server/{start,stop,restart}` | Router control. Start and restart answer 202 while it happens, or 409 with no build or during a benchmark |
 | `GET /healthz` | Liveness, used by `llama-gui healthcheck` |
 
 `web/src/lib/api` mirrors these routes one to one. State-changing requests whose `Sec-Fetch-Site` is present and
