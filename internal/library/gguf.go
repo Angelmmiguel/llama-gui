@@ -67,7 +67,7 @@ type limitedReader struct {
 }
 
 func (l *limitedReader) take(n uint64) error {
-	if n > uint64(l.max-l.pos) {
+	if n > uint64(l.max-l.pos) { //nolint:gosec // pos never exceeds max
 		return ErrTooLarge
 	}
 	return nil
@@ -96,7 +96,7 @@ func (l *limitedReader) skip(n uint64) error {
 		step := min(n, 1<<20)
 		d, err := l.r.Discard(int(step))
 		l.pos += int64(d)
-		n -= uint64(d)
+		n -= uint64(d) //nolint:gosec // Discard returns a non-negative count
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				return ErrTruncated
@@ -171,15 +171,15 @@ func (l *limitedReader) readInt(t uint32) (v uint64, isInt bool, err error) {
 	case 0, 7:
 		return uint64(b[0]), true, nil
 	case 1:
-		return uint64(int64(int8(b[0]))), true, nil
+		return uint64(int64(int8(b[0]))), true, nil //nolint:gosec // sign extension is intended
 	case 2:
 		return uint64(binary.LittleEndian.Uint16(b[:])), true, nil
 	case 3:
-		return uint64(int64(int16(binary.LittleEndian.Uint16(b[:])))), true, nil
+		return uint64(int64(int16(binary.LittleEndian.Uint16(b[:])))), true, nil //nolint:gosec // sign extension is intended
 	case 4:
 		return uint64(binary.LittleEndian.Uint32(b[:])), true, nil
 	case 5:
-		return uint64(int64(int32(binary.LittleEndian.Uint32(b[:])))), true, nil
+		return uint64(int64(int32(binary.LittleEndian.Uint32(b[:])))), true, nil //nolint:gosec // sign extension is intended
 	case 10, 11:
 		return binary.LittleEndian.Uint64(b[:]), true, nil
 	}
@@ -395,7 +395,7 @@ func (l *limitedReader) maxOfIntArray() (max uint64, ok bool, err error) {
 		if err != nil {
 			return 0, false, err
 		}
-		if int64(v) > 0 && v > max {
+		if int64(v) > 0 && v > max { //nolint:gosec // a negative count reads as not positive
 			max = v
 		}
 	}

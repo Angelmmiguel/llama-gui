@@ -26,8 +26,8 @@ var (
 	ErrInvalidRepo  = errors.New("invalid repository name, expected user/repo")
 	ErrInvalidName  = errors.New("invalid file name")
 	ErrNotFound     = errors.New("not found on Hugging Face")
-	ErrUnauthorized = errors.New("Hugging Face refused access: the repository is gated or private, so a Hugging Face token may be required")
-	ErrRateLimited  = errors.New("Hugging Face rate limit reached: wait a few minutes, or add a Hugging Face token for a higher limit")
+	ErrUnauthorized = errors.New("hugging face refused access: the repository is gated or private, so a Hugging Face token may be required")
+	ErrRateLimited  = errors.New("hugging face rate limit reached: wait a few minutes, or add a Hugging Face token for a higher limit")
 )
 
 const (
@@ -149,7 +149,7 @@ func (c *Client) request(ctx context.Context, u string, hdr http.Header) (*http.
 		return nil, err
 	}
 	if err := statusError(resp); err != nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return nil, err
 	}
 	return resp, nil
@@ -169,7 +169,7 @@ func statusError(resp *http.Response) error {
 		}
 		return ErrRateLimited
 	case resp.StatusCode >= 300:
-		return fmt.Errorf("Hugging Face returned %s", resp.Status)
+		return fmt.Errorf("hub returned %s", resp.Status)
 	}
 	return nil
 }
@@ -179,7 +179,7 @@ func (c *Client) getJSON(ctx context.Context, u string, v any) (http.Header, err
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 32<<20)).Decode(v); err != nil {
 		return nil, fmt.Errorf("decode Hugging Face response: %w", err)
 	}
@@ -439,6 +439,6 @@ func (c *Client) prefix(ctx context.Context, u string, n int64) ([]byte, error) 
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return io.ReadAll(io.LimitReader(resp.Body, n)) // a server that ignores Range sends 200: stop at n
 }

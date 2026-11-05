@@ -73,7 +73,7 @@ func readMeta(path string) *Metadata {
 	if err != nil {
 		return nil
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	m, err := ParseGGUF(f, localMetaLimit)
 	if err != nil {
 		return nil
@@ -216,8 +216,8 @@ func DiskUsage(modelsDir string) (Disk, error) {
 	if err := syscall.Statfs(modelsDir, &st); err != nil {
 		return d, err
 	}
-	d.FreeBytes = int64(st.Bavail) * int64(st.Bsize)
-	d.TotalBytes = int64(st.Blocks) * int64(st.Bsize)
+	d.FreeBytes = int64(st.Bavail) * int64(st.Bsize)  //nolint:gosec // filesystem sizes fit int64
+	d.TotalBytes = int64(st.Blocks) * int64(st.Bsize) //nolint:gosec // filesystem sizes fit int64
 	err := filepath.WalkDir(modelsDir, func(_ string, e fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -238,5 +238,5 @@ func freeBytes(path string) (int64, error) {
 	if err := syscall.Statfs(path, &st); err != nil {
 		return 0, err
 	}
-	return int64(st.Bavail) * int64(st.Bsize), nil
+	return int64(st.Bavail) * int64(st.Bsize), nil //nolint:gosec // filesystem sizes fit int64
 }
