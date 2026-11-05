@@ -290,3 +290,14 @@ func TestActiveManifest(t *testing.T) {
 		t.Error("the active id is not on disk")
 	}
 }
+
+func TestRefreshNeverInstalls(t *testing.T) {
+	h := &updateHarness{res: &fakeResolver{stable: "b20", nightly: "b21"}, active: Manifest{ID: "b1-cpu", Tag: "b1", Backend: "cpu", Channel: releases.ChannelStable}}
+	info := h.checker(UpdatesAuto).Refresh(t.Context())
+	if !info.Available || info.Latest != "v1" || info.CheckedAt.IsZero() {
+		t.Errorf("info = %+v", info)
+	}
+	if len(h.installed) != 0 {
+		t.Errorf("installed %v", h.installed)
+	}
+}

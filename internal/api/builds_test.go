@@ -144,3 +144,11 @@ func TestCompareBuilds(t *testing.T) {
 		{"traversal", http.MethodGet, "/api/v1/builds/compare?from=../x&to=b1", "", http.StatusBadRequest, ""},
 	})
 }
+
+func TestCheckBuilds(t *testing.T) {
+	h := newHarness(t)
+	code, body := h.sendJSON(t, http.MethodPost, "/api/v1/builds/check", "")
+	if code != http.StatusOK || body["latest"] != "v3" || h.checks != 1 {
+		t.Errorf("%d %v after %d checks", code, body, h.checks)
+	}
+}

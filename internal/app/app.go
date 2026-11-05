@@ -193,10 +193,11 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, ln net.Listen
 			}
 			return c, true
 		},
-		CancelSlot: px.Cancel,
-		Hardware:   detector.Detect,
-		Updates:    updates.Info,
-		Done:       ctx.Done(),
+		CancelSlot:   px.Cancel,
+		Hardware:     detector.Detect,
+		Updates:      updates.Info,
+		CheckUpdates: updates.Refresh,
+		Done:         ctx.Done(),
 	}), web.Handler(), px)
 
 	// Each of these outlives what feeds it: the log pipeline runs until the router

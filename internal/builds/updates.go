@@ -103,10 +103,23 @@ func (c *UpdateChecker) Run(ctx context.Context) {
 	}
 }
 
-// Check resolves both channels and, under policy auto, updates a stable build.
-// A failure is remembered and otherwise ignored: what was found before stays, and
-// the next check tries again.
+// Check refreshes what is known and, under policy auto, updates a stable build.
 func (c *UpdateChecker) Check(ctx context.Context) {
+	c.refresh(ctx)
+	if c.o.Policy == UpdatesAuto {
+		c.autoUpdate(ctx)
+	}
+}
+
+// Refresh resolves both channels now and returns the result, without acting on it.
+func (c *UpdateChecker) Refresh(ctx context.Context) UpdateInfo {
+	c.refresh(ctx)
+	return c.Info(ctx)
+}
+
+// refresh resolves both channels. A failure is remembered and otherwise ignored: what was
+// found before stays, and the next check tries again.
+func (c *UpdateChecker) refresh(ctx context.Context) {
 	stable, stableErr := c.resolve(ctx, string(releases.ChannelStable))
 	nightly, nightlyErr := c.resolve(ctx, string(releases.ChannelNightly))
 	err := errors.Join(stableErr, nightlyErr)
@@ -131,9 +144,6 @@ func (c *UpdateChecker) Check(ctx context.Context) {
 		c.log.Info("update check skipped, GitHub's rate limit was hit", "error", err)
 	case ctx.Err() == nil:
 		c.log.Warn("update check failed", "error", err)
-	}
-	if c.o.Policy == UpdatesAuto {
-		c.autoUpdate(ctx)
 	}
 }
 

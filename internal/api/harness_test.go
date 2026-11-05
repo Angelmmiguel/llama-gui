@@ -278,6 +278,7 @@ type harness struct {
 	models    string
 	hw        hardware.Snapshot
 	reloads   int
+	checks    int
 	handler   http.Handler
 }
 
@@ -333,7 +334,11 @@ func (h *harness) deps() Deps {
 		MemoryMargin: 2048,
 		ReloadModels: func(context.Context) { h.reloads++ },
 		Updates:      func(context.Context) builds.UpdateInfo { return builds.UpdateInfo{Available: true, Latest: "v2"} },
-		Done:         h.done,
+		CheckUpdates: func(context.Context) builds.UpdateInfo {
+			h.checks++
+			return builds.UpdateInfo{Latest: "v3"}
+		},
+		Done: h.done,
 	}
 }
 

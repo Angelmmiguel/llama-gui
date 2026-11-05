@@ -154,6 +154,8 @@ type Deps struct {
 	CancelSlot func(model string, slot int) bool
 	Hardware   func(ctx context.Context) hardware.Snapshot
 	Updates    func(ctx context.Context) builds.UpdateInfo
+	// CheckUpdates asks upstream now, instead of waiting for the next scheduled check.
+	CheckUpdates func(ctx context.Context) builds.UpdateInfo
 	// Done closes as shutdown begins, ending the streams so they don't hold up the drain.
 	Done <-chan struct{}
 }
@@ -184,6 +186,7 @@ func Handler(deps Deps) http.Handler {
 		"GET /builds":                a.listBuilds,
 		"GET /builds/available":      a.availableBuilds,
 		"GET /builds/compare":        a.compareBuilds,
+		"POST /builds/check":         a.checkBuilds,
 		"POST /builds/install":       a.installBuild,
 		"GET /builds/jobs":           a.listJobs,
 		"DELETE /builds/jobs/{id}":   a.cancelJob,

@@ -136,9 +136,10 @@ meaning: 404, 401 when a token may be needed, 429 with `Retry-After` when known,
 | --- | --- |
 | `GET /status` | `state`, `version`, `uptime_seconds`, `capture`, `log_verbosity`, `router_since`, `pid`, `restart_count`, `last_error`, `active_build` `{id, tag, backend}` or null, `models_loaded`, `update_available`, `update` `{available, latest, stable, nightly, checked_at, error}` |
 | `GET /hardware` | Detected GPUs, CPU, RAM, disks |
-| `GET /builds` | `{builds, active}`; each is a manifest plus `active` and `supported` |
+| `GET /builds` | `{builds, active}`; each is a manifest plus `active`, `supported` and `size_bytes` on disk |
 | `GET /builds/available?channel=&limit=&version=` | `{releases}`, newest first. `options` is only on each channel's newest and on an exact `version`, as it costs a download per stable release |
 | `GET /builds/compare?from=&to=` | `{ahead_by, commits}` between two tags |
+| `POST /builds/check` | Looks upstream now and answers like `update` in `/status`. Never installs, whatever the policy |
 | `POST /builds/install` `{version, backend}` | 202 with the job; 200 if already installed. `backend` defaults to `auto` |
 | `GET /builds/jobs` · `DELETE /builds/jobs/{id}` | `{jobs}` with progress; cancel |
 | `POST /builds/{id}/activate` · `DELETE /builds/{id}` | Switch, answering 202 while the router restarts; remove |

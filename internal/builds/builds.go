@@ -160,6 +160,8 @@ type Manifest struct {
 	InstalledAt time.Time        `json:"installed_at"`
 	Assets      []releases.Asset `json:"assets"`
 	Probe       Probe            `json:"probe"`
+	// SizeBytes is what the build takes on disk, measured by List rather than stored.
+	SizeBytes int64 `json:"size_bytes,omitempty"`
 }
 
 // BuildID returns the id and directory name of a build.
@@ -225,10 +227,26 @@ func (m *Manager) List() ([]Manifest, error) {
 			}
 			continue
 		}
+		man.SizeBytes = dirSize(filepath.Join(m.dir, e.Name()))
 		list = append(list, man)
 	}
 	slices.SortStableFunc(list, func(a, b Manifest) int { return b.InstalledAt.Compare(a.InstalledAt) })
 	return list, nil
+}
+
+// dirSize adds up the regular files under dir. An unreadable entry only makes it an underestimate.
+func dirSize(dir string) int64 {
+	var total int64
+	_ = filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil || !d.Type().IsRegular() {
+			return nil //nolint:nilerr // see above
+		}
+		if info, err := d.Info(); err == nil {
+			total += info.Size()
+		}
+		return nil
+	})
+	return total
 }
 
 // Get returns the manifest of a build.

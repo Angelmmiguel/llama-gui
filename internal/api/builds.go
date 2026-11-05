@@ -117,6 +117,12 @@ func (a *api) availableBuilds(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, http.StatusOK, map[string]any{"releases": out})
 }
 
+// checkBuilds looks for new releases at the user's request. It never installs anything,
+// whatever the update policy.
+func (a *api) checkBuilds(w http.ResponseWriter, r *http.Request) {
+	WriteJSON(w, http.StatusOK, a.CheckUpdates(r.Context()))
+}
+
 func (a *api) compareBuilds(w http.ResponseWriter, r *http.Request) {
 	q := newQuery(r)
 	from, to := q.str("from"), q.str("to")

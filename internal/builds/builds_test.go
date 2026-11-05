@@ -907,3 +907,19 @@ func TestValidateID(t *testing.T) {
 		}
 	}
 }
+
+func TestListMeasuresSize(t *testing.T) {
+	f := newFixture(t)
+	f.mustInstall(t, "b1")
+	if err := os.WriteFile(filepath.Join(f.dir, "b1-cpu", "extra"), make([]byte, 1000), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	list, err := f.m.List()
+	if err != nil || len(list) != 1 || list[0].SizeBytes < 1000 {
+		t.Fatalf("list = %+v, %v", list, err)
+	}
+	onDisk, err := os.ReadFile(filepath.Join(f.dir, "b1-cpu", manifestName))
+	if err != nil || strings.Contains(string(onDisk), "size_bytes") {
+		t.Errorf("size is measured, not stored: %s, %v", onDisk, err)
+	}
+}
