@@ -35,7 +35,7 @@ func CanExecute(dir string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
 	defer cancel()
 	for attempt := 0; ; attempt++ {
-		err = exec.CommandContext(ctx, path).Run() //nolint:gosec // our own script
+		err = exec.CommandContext(ctx, path).Run()
 		// A concurrent fork can briefly inherit the write descriptor.
 		if errors.Is(err, syscall.ETXTBSY) && attempt < 5 {
 			time.Sleep(50 * time.Millisecond)
