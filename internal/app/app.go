@@ -101,7 +101,6 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, ln net.Listen
 		MemoryMargin: cfg.MemoryMargin,
 		Verbosity:    cfg.LogVerbosity,
 		ExtraArgs:    strings.Fields(cfg.LlamaArgs),
-		Env:          routerEnv(cfg),
 		Logger:       log,
 		OnLine:       pipe.OnLine,
 		IdlePolicy:   svc.IdlePolicy,
@@ -229,13 +228,6 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, ln net.Listen
 	return serveErr
 }
 
-// routerEnv is what the router's process adds to our environment.
-func routerEnv(cfg config.Config) []string {
-	if cfg.HFToken == "" {
-		return nil
-	}
-	return []string{"HF_TOKEN=" + cfg.HFToken}
-}
 
 // routerClients keeps one client per router address, which changes on each start.
 type routerClients struct {
