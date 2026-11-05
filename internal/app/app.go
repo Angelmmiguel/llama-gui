@@ -228,7 +228,6 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, ln net.Listen
 	return serveErr
 }
 
-
 // routerClients keeps one client per router address, which changes on each start.
 type routerClients struct {
 	upstream func() (*url.URL, bool)
