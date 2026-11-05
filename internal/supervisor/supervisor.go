@@ -12,7 +12,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -100,6 +102,7 @@ type run struct {
 	stopOnce, killOnce         sync.Once
 	resolveOnce                sync.Once
 	firstErr                   error
+	healthyAt                  time.Time // owned by the run loop
 }
 
 func newRun() *run {
@@ -262,7 +265,7 @@ func (s *Supervisor) loop(r *run) {
 			r.resolve(err)
 			return
 		}
-		begin := s.now()
+		r.healthyAt = time.Time{}
 		stopped, err := s.runOnce(r, bin)
 		if stopped {
 			finish("")
@@ -274,7 +277,7 @@ func (s *Supervisor) loop(r *run) {
 			st.State, st.PID, st.BaseURL, st.LastError = Crashed, 0, "", err.Error()
 		})
 		r.resolve(err)
-		if s.now().Sub(begin) >= s.opts.StableAfter {
+		if !r.healthyAt.IsZero() && s.now().Sub(r.healthyAt) >= s.opts.StableAfter {
 			attempt = 0
 		}
 		timer := time.NewTimer(backoff(attempt, s.opts.BackoffMin, s.opts.BackoffMax))
@@ -288,6 +291,13 @@ func (s *Supervisor) loop(r *run) {
 		}
 		s.update(func(st *Status) { st.RestartCount++ })
 	}
+}
+
+// childEnv drops our own settings, tokens among them, which llama-server has no use for.
+func childEnv(env []string) []string {
+	return slices.DeleteFunc(slices.Clone(env), func(kv string) bool {
+		return strings.HasPrefix(kv, "LLAMA_GUI_")
+	})
 }
 
 // backoff doubles from lo per attempt and caps at hi.
@@ -315,7 +325,7 @@ func (s *Supervisor) runOnce(r *run, bin string) (stopped bool, err error) {
 	base := &url.URL{Scheme: "http", Host: net.JoinHostPort("127.0.0.1", strconv.Itoa(port))}
 
 	cmd := exec.Command(bin, s.args(port)...)
-	cmd.Env = append(os.Environ(), s.opts.Env...)
+	cmd.Env = append(childEnv(os.Environ()), s.opts.Env...)
 	// Its own group, so that signals reach the model children too.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	// One pipe for both streams keeps lines in order. Passing files rather than
@@ -382,6 +392,7 @@ func (s *Supervisor) runOnce(r *run, bin string) (stopped bool, err error) {
 	s.upstream = base
 	wanted := s.remembered
 	s.mu.Unlock()
+	r.healthyAt = s.now()
 	r.resolve(nil)
 
 	monitor := make(chan struct{})

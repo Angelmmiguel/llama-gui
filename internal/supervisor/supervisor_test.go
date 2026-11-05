@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -615,4 +616,11 @@ func TestTouchDelaysUnload(t *testing.T) {
 		t.Fatalf("a = %q while touched", got)
 	}
 	waitFor(t, "unloaded", func() bool { return modelStatus(t, s, "a") == "unloaded" })
+}
+
+func TestChildEnvDropsOurSettings(t *testing.T) {
+	got := childEnv([]string{"PATH=/bin", "LLAMA_GUI_GITHUB_TOKEN=x", "HF_TOKEN=y", "LLAMA_GUI_ADDR=:1"})
+	if want := []string{"PATH=/bin", "HF_TOKEN=y"}; !slices.Equal(got, want) {
+		t.Errorf("childEnv = %v, want %v", got, want)
+	}
 }
