@@ -186,6 +186,9 @@ func Handler(deps Deps) http.Handler {
 		"GET /logs/volume":   a.logVolume,
 		"GET /logs/download": a.downloadLogs,
 		"GET /events":        a.listEvents,
+
+		"GET /telemetry":        a.telemetry,
+		"GET /telemetry/stream": a.streamTelemetry,
 	} {
 		method, path, _ := strings.Cut(pattern, " ")
 		mux.HandleFunc(method+" /api/v1"+path, h)
