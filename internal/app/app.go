@@ -21,6 +21,7 @@ import (
 	"github.com/Angelmmiguel/llama-gui/internal/builds"
 	"github.com/Angelmmiguel/llama-gui/internal/config"
 	"github.com/Angelmmiguel/llama-gui/internal/hardware"
+	"github.com/Angelmmiguel/llama-gui/internal/library"
 	"github.com/Angelmmiguel/llama-gui/internal/llama"
 	"github.com/Angelmmiguel/llama-gui/internal/logs"
 	"github.com/Angelmmiguel/llama-gui/internal/profiles"
@@ -160,10 +161,18 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, ln net.Listen
 
 	ctrl.applyActive(ctx)
 
+	hub := library.NewClient(nil, "", cfg.HFToken)
+	if err := os.MkdirAll(cfg.Models, 0o750); err != nil {
+		log.Warn("models directory", "error", err)
+	}
+	downloads := library.NewQueue(cfg.Models, hub, nil, func() { ctrl.reloadPreset(ctrlCtx) })
+
 	handler := routes(api.Handler(api.Deps{
 		Version:      cfg.Version,
 		Capture:      cfg.Capture,
 		LogVerbosity: cfg.LogVerbosity,
+		MemoryMargin: cfg.MemoryMargin,
+		ModelsDir:    cfg.Models,
 		Started:      time.Now(),
 		Now:          time.Now,
 		Logger:       log,
@@ -174,6 +183,9 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, ln net.Listen
 		Store:        st,
 		Telemetry:    sampler,
 		Tail:         pipe,
+		Hub:          libraryHub{hub},
+		Downloads:    downloads,
+		ReloadModels: ctrl.reloadPreset,
 		Router: func() (api.Router, bool) {
 			c, ok := clients.get()
 			if !ok {
@@ -210,6 +222,7 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, ln net.Listen
 	serveErr := serve(ctx, ln, handler, shutdownTimeout, log)
 
 	// The HTTP server has drained, so nothing can start new work from here on.
+	downloads.Close()
 	ctrl.close()
 	mgr.Close()
 	stopCtx, cancelStop := context.WithTimeout(context.Background(), stopTimeout)
@@ -255,6 +268,23 @@ func (r *routerClients) get() (*llama.Client, bool) {
 		r.base, r.client = base, llama.New(base, r.http)
 	}
 	return r.client, true
+}
+
+// libraryHub adds the resolved starter catalog to the hub client.
+type libraryHub struct{ *library.Client }
+
+// Candidates recovers the reason when no entry resolved, as ResolveCatalog only
+// leaves out what failed, and the Library should say Hugging Face is out of reach
+// rather than show an empty list.
+func (h libraryHub) Candidates(ctx context.Context) ([]library.Candidate, error) {
+	entries := library.Catalog()
+	cands := library.ResolveCatalog(ctx, h.Client, entries)
+	if len(cands) == 0 && len(entries) > 0 {
+		if _, err := h.Repo(ctx, entries[0].Repo); err != nil {
+			return nil, err
+		}
+	}
+	return cands, nil
 }
 
 type presetReloader struct{ c *llama.Client }

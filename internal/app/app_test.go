@@ -3,11 +3,13 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +17,7 @@ import (
 	"time"
 
 	"github.com/Angelmmiguel/llama-gui/internal/config"
+	"github.com/Angelmmiguel/llama-gui/internal/library"
 	"github.com/Angelmmiguel/llama-gui/internal/store"
 )
 
@@ -269,5 +272,54 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 			t.Fatalf("timed out waiting for %s", what)
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func TestLibraryHubReportsWhyTheCatalogIsEmpty(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+	_, err := libraryHub{library.NewClient(srv.Client(), srv.URL, "")}.Candidates(context.Background())
+	if !errors.Is(err, library.ErrRateLimited) {
+		t.Errorf("err = %v", err)
+	}
+}
+
+func TestLibraryRoutesAreWired(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.MemoryMargin = 2048
+	ln := listen(t, cfg.Addr)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- run(ctx, cfg, quiet(), ln) }()
+	defer func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Error(err)
+		}
+	}()
+	base := "http://" + ln.Addr().String() + "/api/v1"
+	for range 100 {
+		if resp, err := http.Get(base + "/healthz"); err == nil {
+			_ = resp.Body.Close()
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err := os.WriteFile(filepath.Join(cfg.Models, "a-Q8_0.gguf"), []byte("not a real header"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, body := get(t, base+"/library/local")
+	models, _ := body["models"].([]any)
+	hw, _ := body["hardware"].(map[string]any)
+	if code != http.StatusOK || len(models) != 1 || hw["headroom_bytes"] != float64(2048<<20) {
+		t.Errorf("local: %d %v", code, body)
+	}
+	if code, body := get(t, base+"/library/disk"); code != http.StatusOK || body["gguf_bytes"] != float64(17) {
+		t.Errorf("disk: %d %v", code, body)
+	}
+	if code, body := get(t, base+"/library/downloads"); code != http.StatusOK || body["jobs"] == nil {
+		t.Errorf("downloads: %d %v", code, body)
 	}
 }
