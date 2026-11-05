@@ -1,0 +1,217 @@
+// Package profiles owns launch profiles: their shape, validation, storage as
+// JSON documents and rendering to the router's preset INI.
+package profiles
+
+import (
+	"errors"
+	"fmt"
+	"math"
+	"regexp"
+	"strings"
+	"unicode"
+)
+
+// ErrInvalid marks a profile that failed validation.
+var ErrInvalid = errors.New("invalid profile")
+
+// Profile is one model configuration. Zero values mean "leave it to upstream";
+// pointers are used where the zero value is itself meaningful.
+type Profile struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Alias     string `json:"alias"`
+	ModelFile string `json:"model_file"`       // relative to the models dir
+	MMProj    string `json:"mmproj,omitempty"` // relative to the models dir
+	Jinja     *bool  `json:"jinja,omitempty"`  // upstream defaults to on, so false has to be said
+	MLock     bool   `json:"mlock,omitempty"`
+	CtxSize   int    `json:"ctx_size"` // required: --fit would otherwise take all memory
+	Parallel  int    `json:"parallel,omitempty"`
+	NGL       string `json:"ngl,omitempty"` // a number, auto or all
+
+	SplitMode   string `json:"split_mode,omitempty"`
+	TensorSplit string `json:"tensor_split,omitempty"`
+	FlashAttn   string `json:"flash_attn,omitempty"` // auto, on or off
+	CacheTypeK  string `json:"cache_type_k,omitempty"`
+	CacheTypeV  string `json:"cache_type_v,omitempty"`
+	CacheReuse  *int   `json:"cache_reuse,omitempty"`
+	Batch       int    `json:"batch,omitempty"`
+	UBatch      int    `json:"ubatch,omitempty"`
+	Threads     int    `json:"threads,omitempty"`
+
+	Temp          *float64 `json:"temp,omitempty"`
+	TopP          *float64 `json:"top_p,omitempty"`
+	TopK          *int     `json:"top_k,omitempty"`
+	MinP          *float64 `json:"min_p,omitempty"`
+	RepeatPenalty *float64 `json:"repeat_penalty,omitempty"`
+
+	LoadAtStart       bool     `json:"load_at_start,omitempty"`
+	IdleUnloadSeconds int      `json:"idle_unload_seconds,omitempty"`
+	OnDemand          bool     `json:"on_demand,omitempty"`
+	ExtraArgs         []string `json:"extra_args,omitempty"`
+}
+
+var (
+	aliasRe       = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]*$`)
+	nglRe         = regexp.MustCompile(`^(auto|all|-?[0-9]+)$`)
+	tensorSplitRe = regexp.MustCompile(`^[0-9]+(\.[0-9]+)?(,[0-9]+(\.[0-9]+)?)*$`)
+	cacheTypeRe   = regexp.MustCompile(`^[a-z0-9_]+$`)
+	flagKeyRe     = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+)
+
+func invalid(field, format string, args ...any) error {
+	return fmt.Errorf("%w: %s: %s", ErrInvalid, field, fmt.Sprintf(format, args...))
+}
+
+// Validate checks everything that ends up in the preset or a URL.
+func (p Profile) Validate() error {
+	if strings.TrimSpace(p.Name) == "" || strings.ContainsFunc(p.Name, unicode.IsControl) {
+		return invalid("name", "required, without control characters")
+	}
+	if len(p.Alias) > 128 || !aliasRe.MatchString(p.Alias) {
+		return invalid("alias", "must match %s", aliasRe)
+	}
+	if err := checkModelPath("model_file", p.ModelFile); err != nil {
+		return err
+	}
+	if p.MMProj != "" {
+		if err := checkModelPath("mmproj", p.MMProj); err != nil {
+			return err
+		}
+	}
+	if p.CtxSize <= 0 {
+		return invalid("ctx_size", "required and positive")
+	}
+	for _, c := range []struct {
+		field string
+		val   int
+		min   int
+	}{
+		{"parallel", p.Parallel, -1}, {"threads", p.Threads, -1}, {"batch", p.Batch, 0}, {"ubatch", p.UBatch, 0},
+		{"idle_unload_seconds", p.IdleUnloadSeconds, 0},
+	} {
+		if c.val < c.min {
+			return invalid(c.field, "must be at least %d", c.min)
+		}
+	}
+	for _, c := range []struct {
+		field string
+		val   *int
+	}{{"cache_reuse", p.CacheReuse}, {"top_k", p.TopK}} {
+		if c.val != nil && *c.val < 0 {
+			return invalid(c.field, "must not be negative")
+		}
+	}
+	for _, c := range []struct {
+		field string
+		val   *float64
+	}{{"temp", p.Temp}, {"top_p", p.TopP}, {"min_p", p.MinP}, {"repeat_penalty", p.RepeatPenalty}} {
+		if c.val != nil && (*c.val < 0 || math.IsNaN(*c.val) || math.IsInf(*c.val, 0)) {
+			return invalid(c.field, "must be a non-negative number")
+		}
+	}
+	if p.NGL != "" && !nglRe.MatchString(p.NGL) {
+		return invalid("ngl", "must be a number, auto or all")
+	}
+	switch p.SplitMode {
+	case "", "none", "layer", "row", "tensor":
+	default:
+		return invalid("split_mode", "must be none, layer, row or tensor")
+	}
+	if p.TensorSplit != "" && !tensorSplitRe.MatchString(p.TensorSplit) {
+		return invalid("tensor_split", "must be comma-separated numbers")
+	}
+	switch p.FlashAttn {
+	case "", "auto", "on", "off":
+	default:
+		return invalid("flash_attn", "must be auto, on or off")
+	}
+	for _, c := range []struct{ field, val string }{{"cache_type_k", p.CacheTypeK}, {"cache_type_v", p.CacheTypeV}} {
+		if c.val != "" && !cacheTypeRe.MatchString(c.val) {
+			return invalid(c.field, "must match %s", cacheTypeRe)
+		}
+	}
+	_, err := p.extraKVs()
+	return err
+}
+
+func checkModelPath(field, path string) error {
+	if path == "" {
+		return invalid(field, "required")
+	}
+	if strings.HasPrefix(path, "/") || strings.ContainsRune(path, '\\') {
+		return invalid(field, "must be relative to the models dir")
+	}
+	for _, seg := range strings.Split(path, "/") {
+		if seg == ".." || seg == "." || seg == "" {
+			return invalid(field, "must stay inside the models dir")
+		}
+	}
+	return checkValue(field, path)
+}
+
+// checkValue rejects anything that could end a value or start a new key or
+// section once written to the INI.
+func checkValue(field, v string) error {
+	if strings.ContainsAny(v, "[]=;#") || strings.ContainsFunc(v, unicode.IsControl) {
+		return invalid(field, "must not contain control characters or any of [ ] = ; #")
+	}
+	if strings.TrimSpace(v) != v {
+		return invalid(field, "must not start or end with spaces")
+	}
+	return nil
+}
+
+// reserved reports flags the router owns or that would bypass validation.
+func reserved(key string) bool {
+	switch key {
+	case "host", "port", "reuse-port", "alias", "api-key", "api-key-file", "model", "mmproj",
+		"slot-save-path", "log-jsonl", "no-log-jsonl", "load-on-startup":
+		return true
+	}
+	return strings.HasPrefix(key, "models-") || strings.HasPrefix(key, "no-models-")
+}
+
+type kv struct{ key, val string }
+
+// extraKVs turns ExtraArgs into INI keys: --foo bar is foo = bar, --foo=bar too, and
+// a bare --flag is flag = 1. An element may hold one token or several.
+func (p Profile) extraKVs() ([]kv, error) {
+	var toks []string
+	for _, a := range p.ExtraArgs {
+		toks = append(toks, strings.Fields(a)...)
+	}
+	typed := map[string]bool{}
+	for _, e := range p.typedKVs("") {
+		typed[e.key] = true
+	}
+	var out []kv
+	for i := 0; i < len(toks); i++ {
+		name, ok := strings.CutPrefix(toks[i], "--")
+		if !ok {
+			return nil, invalid("extra_args", "%q is not a long flag", toks[i])
+		}
+		key, val, hasVal := strings.Cut(name, "=")
+		if !hasVal {
+			val = "1"
+			if i+1 < len(toks) && !strings.HasPrefix(toks[i+1], "--") {
+				i++
+				val = toks[i]
+			}
+		}
+		if !flagKeyRe.MatchString(key) {
+			return nil, invalid("extra_args", "%q is not a long flag", toks[i])
+		}
+		if reserved(key) {
+			return nil, invalid("extra_args", "--%s is reserved", key)
+		}
+		if typed[key] {
+			return nil, invalid("extra_args", "--%s repeats a profile setting", key)
+		}
+		typed[key] = true
+		if err := checkValue("extra_args", val); err != nil {
+			return nil, err
+		}
+		out = append(out, kv{key, val})
+	}
+	return out, nil
+}
