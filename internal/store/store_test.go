@@ -89,7 +89,7 @@ func TestMigrationsAreIdempotentAndKeepData(t *testing.T) {
 	if err := s.read.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != 1 {
+	if version != 2 {
 		t.Errorf("user_version = %d", version)
 	}
 	_ = s.Close()
