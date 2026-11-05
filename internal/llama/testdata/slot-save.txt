@@ -1,0 +1,1 @@
+{"id_slot":0,"filename":"s0.bin","n_saved":307,"n_written":7078968,"timings":{"save_ms":2.628}} code=200

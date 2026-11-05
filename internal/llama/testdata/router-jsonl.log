@@ -1,0 +1,100 @@
+READY
+{"type":"log","time":3501,"level":"info","msg":"srv  llama_server: initializing ...\n"}
+{"type":"log","time":20185,"level":"info","msg":"cmn  common_param: common_params_print_info: verbosity = 3 (adjust with the `-lv N` CLI arg)\n"}
+{"type":"log","time":20195,"level":"info","msg":"srv  server_run_r: starting server in router mode. models will be automatically loaded on-demand\n"}
+{"type":"log","time":37257,"level":"info","msg":"srv    operator(): Available models (1):\n"}
+{"type":"log","time":37259,"level":"info","msg":"srv    operator():   [    preset] smolvlm\n"}
+{"type":"log","time":37457,"level":"info","msg":"srv  measure_next: measuring memory for model name=smolvlm\n"}
+{"type":"log","time":37537,"level":"warn","msg":"srv  server_setup: security: no API key is set and CORS allows all origins (see https://github.com/ggml-org/llama.cpp/pull/25655)\n"}
+{"type":"log","time":37542,"level":"warn","msg":"srv  server_setup: security: router mode enabled - do not expose to untrusted environments\n"}
+{"type":"log","time":39096,"level":"info","msg":"srv  server_on_li: listening on http://127.0.0.1:18080\n"}
+{"type":"log","time":44282,"level":"none","msg":"[    0] {\"type\":\"log\",\"time\":954,\"level\":\"info\",\"msg\":\"srv  llama_server: initializing ...\\n\"}\n"}
+{"type":"log","time":51081,"level":"none","msg":"[    0] {\"type\":\"log\",\"time\":7797,\"level\":\"info\",\"msg\":\"cmn  common_param: common_params_print_info: verbosity = 3 (adjust with the `-lv N` CLI arg)\\n\"}\n"}
+{"type":"log","time":119574,"level":"none","msg":"[    0] {\"type\":\"fit_memory_breakdown\",\"data\":{\"unit\":\"MiB\",\"rows\":[{\"kind\":\"host\",\"name\":\"Host\",\"self\":360,\"model\":165,\"context\":90,\"compute\":105}]}}\n"}
+{"type":"log","time":187985,"level":"none","msg":"[    0] {\"type\":\"log\",\"time\":144631,\"level\":\"info\",\"msg\":\"srv  server_run_m: memory measured for model name=/models/SmolVLM-256M-Instruct-Q8_0/SmolVLM-256M-Instruct-Q8_0.gguf at n_ctx=4096 (min) and n_ctx=4096 (max)\\n\"}\n"}
+{"type":"log","time":190587,"level":"info","msg":"srv           run: instance name=smolvlm exited with status 0\n"}
+{"type":"log","time":1494370,"level":"info","msg":"srv          load: spawning server instance with name=smolvlm on port 54513\n"}
+{"type":"log","time":1494387,"level":"info","msg":"srv          load: spawning server instance with args:\n"}
+{"type":"log","time":1494387,"level":"info","msg":"srv          load:   /llama/llama-server\n"}
+{"type":"log","time":1494387,"level":"info","msg":"srv          load:   --host\n"}
+{"type":"log","time":1494387,"level":"info","msg":"srv          load:   127.0.0.1\n"}
+{"type":"log","time":1494387,"level":"info","msg":"srv          load:   --log-colors\n"}
+{"type":"log","time":1494388,"level":"info","msg":"srv          load:   off\n"}
+{"type":"log","time":1494388,"level":"info","msg":"srv          load:   --log-jsonl\n"}
+{"type":"log","time":1494388,"level":"info","msg":"srv          load:   --metrics\n"}
+{"type":"log","time":1494388,"level":"info","msg":"srv          load:   --port\n"}
+{"type":"log","time":1494388,"level":"info","msg":"srv          load:   54513\n"}
+{"type":"log","time":1494388,"level":"info","msg":"srv          load:   --slot-save-path\n"}
+{"type":"log","time":1494388,"level":"info","msg":"srv          load:   /tmp\n"}
+{"type":"log","time":1494389,"level":"info","msg":"srv          load:   --alias\n"}
+{"type":"log","time":1494389,"level":"info","msg":"srv          load:   smolvlm\n"}
+{"type":"log","time":1494389,"level":"info","msg":"srv          load:   --ctx-size\n"}
+{"type":"log","time":1494389,"level":"info","msg":"srv          load:   4096\n"}
+{"type":"log","time":1494389,"level":"info","msg":"srv          load:   --model\n"}
+{"type":"log","time":1494389,"level":"info","msg":"srv          load:   /models/SmolVLM-256M-Instruct-Q8_0/SmolVLM-256M-Instruct-Q8_0.gguf\n"}
+{"type":"log","time":1494390,"level":"info","msg":"srv          load:   --mmproj\n"}
+{"type":"log","time":1494390,"level":"info","msg":"srv          load:   /models/SmolVLM-256M-Instruct-Q8_0/mmproj-SmolVLM-256M-Instruct-Q8_0.gguf\n"}
+{"type":"log","time":1494390,"level":"info","msg":"srv          load:   --parallel\n"}
+{"type":"log","time":1494390,"level":"info","msg":"srv          load:   2\n"}
+{"type":"log","time":1494390,"level":"info","msg":"srv          load:   --threads\n"}
+{"type":"log","time":1494391,"level":"info","msg":"srv          load:   4\n"}
+{"type":"log","time":1501871,"level":"none","msg":"[54513] {\"type\":\"log\",\"time\":1229,\"level\":\"info\",\"msg\":\"srv  llama_server: initializing ...\\n\"}\n"}
+{"type":"log","time":1509076,"level":"none","msg":"[54513] {\"type\":\"log\",\"time\":8448,\"level\":\"info\",\"msg\":\"cmn  common_param: common_params_print_info: verbosity = 3 (adjust with the `-lv N` CLI arg)\\n\"}\n"}
+{"type":"log","time":1509634,"level":"none","msg":"[54513] {\"type\":\"log\",\"time\":9018,\"level\":\"warn\",\"msg\":\"srv  server_setup: security: no API key is set and CORS allows all origins (see https://github.com/ggml-org/llama.cpp/pull/25655)\\n\"}\n"}
+{"type":"log","time":1511550,"level":"none","msg":"[54513] {\"type\":\"log\",\"time\":10964,\"level\":\"info\",\"msg\":\"srv    load_model: loading model '/models/SmolVLM-256M-Instruct-Q8_0/SmolVLM-256M-Instruct-Q8_0.gguf'\\n\"}\n"}
+{"type":"log","time":1586853,"level":"none","msg":"[54513] {\"type\":\"fit_memory_breakdown\",\"data\":{\"unit\":\"MiB\",\"rows\":[{\"kind\":\"host\",\"name\":\"Host\",\"self\":271,\"model\":165,\"context\":90,\"compute\":16}]}}\n"}
+{"type":"log","time":1692438,"level":"none","msg":"[54513] {\"type\":\"log\",\"time\":191818,\"level\":\"info\",\"msg\":\"cmn          init: llama threadpool init, n_threads = 4\\n\"}\n"}
+{"type":"log","time":1704625,"level":"none","msg":"[54513] {\"type\":\"log\",\"time\":204011,\"level\":\"warn\",\"msg\":\"load_tensors: ffn up/down are swapped\\n\"}\n"}
+{"type":"log","time":1747891,"level":"none","msg":"[54513] {\"type\":\"log\",\"time\":247189,\"level\":\"info\",\"msg\":\"srv    load_model: loaded multimodal model, '/models/SmolVLM-256M-Instruct-Q8_0/mmproj-SmolVLM-256M-Instruct-Q8_0.gguf'\\n\"}\n"}
+{"type":"log","time":1760792,"level":"none","msg":"[54513] {\"type\":\"log\",\"time\":260161,\"level\":\"info\",\"msg\":\"srv    load_model: initializing, n_slots = 2, n_ctx_slot = 2048, kv_unified = 'false'\\n\"}\n"}
+{"type":"log","time":1763934,"level":"none","msg":"[54513] {\"type\":\"log\",\"time\":263348,\"level\":\"info\",\"msg\":\"srv  server_run_i: model loaded\\n\"}\n"}
+{"type":"log","time":1763936,"level":"none","msg":"[54513] {\"type\":\"log\",\"time\":263353,\"level\":\"info\",\"msg\":\"srv  server_on_li: listening on http://127.0.0.1:54513\\n\"}\n"}
+{"type":"log","time":1764252,"level":"none","msg":"[54513] {\"type\":\"log\",\"time\":263486,\"level\":\"info\",\"msg\":\"srv    operator(): child server monitoring thread started, waiting for EOF on stdin...\\n\"}\n"}
+{"type":"log","time":3528527,"level":"info","msg":"srv  proxy_reques: proxying request to model smolvlm on port 54513\n"}
+{"type":"log","time":3536292,"level":"info","msg":"srv  proxy_reques: proxying request to model smolvlm on port 54513\n"}
+{"type":"log","time":3544617,"level":"info","msg":"srv  proxy_reques: proxying request to model smolvlm on port 54513\n"}
+{"type":"log","time":3558812,"level":"info","msg":"srv  proxy_reques: proxying request to model smolvlm on port 54513\n"}
+{"type":"log","time":3560147,"level":"none","msg":"[54513] {\"type\":\"log\",\"time\":2059527,\"level\":\"info\",\"msg\":\"slot get_availabl: id  0 | task -1 | selected slot by LRU, n_tokens = 0, t_last = -1\\n\"}\n"}
+{"type":"log","time":3560151,"level":"none","msg":"[54513] {\"type\":\"log\",\"time\":2059610,\"level\":\"info\",\"msg\":\"slot launch_slot_: id  0 | task 2 | processing task, is_child = 0\\n\"}\n"}
+{"type":"log","time":3730722,"level":"none","msg":"[54513] {\"type\":\"log\",\"time\":2230084,\"level\":\"info\",\"msg\":\"slot print_timing: id  0 | task 2 | prompt eval time =      23.03 ms /    14 tokens (    1.65 ms per token,   607.80 tokens per second)\\n\"}\n"}
+{"type":"log","time":3730726,"level":"none","msg":"[54513] {\"type\":\"log\",\"time\":2230088,\"level\":\"info\",\"msg\":\"slot print_timing: id  0 | task 2 |        eval time =     147.40 ms /    24 tokens (    6.41 ms per token,   156.04 tokens per second)\\n\"}\n"}
+{"type":"log","time":3730727,"level":"none","msg":"[54513] {\"type\":\"log\",\"time\":2230089,\"level\":\"info\",\"msg\":\"slot print_timing: id  0 | task 2 |       total time =     170.43 ms /    38 tokens\\n\"}\n"}
+{"type":"log","time":3730727,"level":"none","msg":"[54513] {\"type\":\"log\",\"time\":2230093,\"level\":\"info\",\"msg\":\"slot print_timing: id  0 | task 2 |    graphs reused =         23\\n\"}\n"}
+{"type":"log","time":3730728,"level":"none","msg":"[54513] {\"type\":\"log\",\"time\":2230094,\"level\":\"info\",\"msg\":\"slot print_timing: id  0 | task 2 |   graph reallocs =          0    /     0        (same size) / (changed size)\\n\"}\n"}
+{"type":"log","time":3730728,"level":"none","msg":"[54513] {\"type\":\"log\",\"time\":2230130,\"level\":\"info\",\"msg\":\"slot      release: id  0 | task 2 | stop processing: n_tokens = 37, truncated = 0\\n\"}\n"}
+{"type":"log","time":5063372,"level":"info","msg":"srv  proxy_reques: proxying request to model smolvlm on port 54513\n"}
+{"type":"log","time":6075324,"level":"info","msg":"srv  proxy_reques: proxying request to model smolvlm on port 54513\n"}
+{"type":"log","time":7087379,"level":"info","msg":"srv  proxy_reques: proxying request to model smolvlm on port 54513\n"}
+{"type":"log","time":8099360,"level":"info","msg":"srv  proxy_reques: proxying request to model smolvlm on port 54513\n"}
+{"type":"log","time":9123033,"level":"info","msg":"srv  proxy_reques: proxying request to model smolvlm on port 54513\n"}
+{"type":"log","time":9146051,"level":"info","msg":"srv  proxy_reques: proxying request to model smolvlm on port 54513\n"}
+{"type":"log","time":9156989,"level":"info","msg":"srv  proxy_reques: proxying request to model smolvlm on port 54513\n"}
+{"type":"log","time":9158009,"level":"none","msg":"[54513] {\"type\":\"log\",\"time\":7657393,\"level\":\"info\",\"msg\":\"slot get_availabl: id  0 | task -1 | selected slot by LCP similarity, f_sim_best = 0.364 (> 0.100 thold), f_keep = 0.108\\n\"}\n"}
+{"type":"log","time":9158189,"level":"none","msg":"[54513] {\"type\":\"log\",\"time\":7657617,\"level\":\"info\",\"msg\":\"slot launch_slot_: id  0 | task 33 | processing task, is_child = 0\\n\"}\n"}
+{"type":"log","time":9218415,"level":"none","msg":"[54513] {\"type\":\"log\",\"time\":7717684,\"level\":\"info\",\"msg\":\"slot print_timing: id  0 | task 33 | prompt eval time =      14.97 ms /     7 tokens (    2.14 ms per token,   467.54 tokens per second)\\n\"}\n"}
+{"type":"log","time":9218417,"level":"none","msg":"[54513] {\"type\":\"log\",\"time\":7717686,\"level\":\"info\",\"msg\":\"slot print_timing: id  0 | task 33 |        eval time =      45.08 ms /     8 tokens (    6.44 ms per token,   155.28 tokens per second)\\n\"}\n"}
+{"type":"log","time":9218418,"level":"none","msg":"[54513] {\"type\":\"log\",\"time\":7717687,\"level\":\"info\",\"msg\":\"slot print_timing: id  0 | task 33 |       total time =      60.05 ms /    15 tokens\\n\"}\n"}
+{"type":"log","time":9218418,"level":"none","msg":"[54513] {\"type\":\"log\",\"time\":7717688,\"level\":\"info\",\"msg\":\"slot print_timing: id  0 | task 33 |    graphs reused =         29\\n\"}\n"}
+{"type":"log","time":9218418,"level":"none","msg":"[54513] {\"type\":\"log\",\"time\":7717688,\"level\":\"info\",\"msg\":\"slot print_timing: id  0 | task 33 |   graph reallocs =          0    /     0        (same size) / (changed size)\\n\"}\n"}
+{"type":"log","time":9218419,"level":"none","msg":"[54513] {\"type\":\"log\",\"time\":7717739,\"level\":\"info\",\"msg\":\"slot      release: id  0 | task 33 | stop processing: n_tokens = 18, truncated = 0\\n\"}\n"}
+{"type":"log","time":26101573,"level":"info","msg":"srv  proxy_reques: proxying request to model smolvlm on port 54513\n"}
+{"type":"log","time":26102731,"level":"none","msg":"[54513] {\"type\":\"log\",\"time\":24602098,\"level\":\"info\",\"msg\":\"slot get_availabl: id  0 | task -1 | selected slot by LCP similarity, f_sim_best = 0.167 (> 0.100 thold), f_keep = 0.167\\n\"}\n"}
+{"type":"log","time":26102940,"level":"none","msg":"[54513] {\"type\":\"log\",\"time\":24602242,\"level\":\"info\",\"msg\":\"slot launch_slot_: id  0 | task 42 | processing task, is_child = 0\\n\"}\n"}
+{"type":"log","time":26404146,"level":"info","msg":"srv  proxy_reques: proxying request to model smolvlm on port 54513\n"}
+{"type":"log","time":26714885,"level":"info","msg":"srv  proxy_reques: proxying request to model smolvlm on port 54513\n"}
+{"type":"log","time":27025001,"level":"info","msg":"srv  proxy_reques: proxying request to model smolvlm on port 54513\n"}
+{"type":"log","time":27335086,"level":"info","msg":"srv  proxy_reques: proxying request to model smolvlm on port 54513\n"}
+{"type":"log","time":27645645,"level":"info","msg":"srv  proxy_reques: proxying request to model smolvlm on port 54513\n"}
+{"type":"log","time":27955860,"level":"info","msg":"srv  proxy_reques: proxying request to model smolvlm on port 54513\n"}
+{"type":"log","time":28166293,"level":"info","msg":"srv  proxy_reques: proxying request to model smolvlm on port 54513\n"}
+{"type":"log","time":28173670,"level":"error","msg":"srv    operator(): http client error: Failed to read connection\n"}
+{"type":"log","time":28181713,"level":"none","msg":"[54513] {\"type\":\"log\",\"time\":26681016,\"level\":\"warn\",\"msg\":\"srv          stop: cancel task, id_task = 42\\n\"}\n"}
+{"type":"log","time":28189517,"level":"none","msg":"[54513] {\"type\":\"log\",\"time\":26688898,\"level\":\"info\",\"msg\":\"slot      release: id  0 | task 42 | stop processing: n_tokens = 307, truncated = 0\\n\"}\n"}
+{"type":"log","time":28678980,"level":"info","msg":"srv  proxy_reques: proxying request to model smolvlm on port 54513\n"}
+{"type":"log","time":28685404,"level":"info","msg":"srv  proxy_reques: proxying request to model smolvlm on port 54513\n"}
+{"type":"log","time":28696075,"level":"info","msg":"srv  proxy_reques: proxying request to model smolvlm on port 54513\n"}
+{"type":"log","time":28704029,"level":"info","msg":"srv        unload: stopping model instance name=smolvlm\n"}
+{"type":"log","time":28704256,"level":"none","msg":"[54513] {\"type\":\"log\",\"time\":27203665,\"level\":\"info\",\"msg\":\"srv    operator(): exit command received, exiting...\\n\"}\n"}
+{"type":"log","time":28704515,"level":"none","msg":"[54513] {\"type\":\"log\",\"time\":27203863,\"level\":\"info\",\"msg\":\"srv    operator(): operator(): cleaning up before exit...\\n\"}\n"}
+{"type":"log","time":28704971,"level":"none","msg":"[54513] {\"type\":\"fit_memory_breakdown\",\"data\":{\"unit\":\"MiB\",\"rows\":[{\"kind\":\"host\",\"name\":\"Host\",\"self\":271,\"model\":165,\"context\":90,\"compute\":16}]}}\n"}
+{"type":"log","time":28729497,"level":"info","msg":"srv           run: instance name=smolvlm exited with status 0\n"}
