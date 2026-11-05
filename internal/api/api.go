@@ -169,6 +169,13 @@ func Handler(deps Deps) http.Handler {
 		"PUT /profiles/{id}":         a.updateProfile,
 		"DELETE /profiles/{id}":      a.deleteProfile,
 		"GET /profiles/{id}/command": a.profileCommand,
+
+		"GET /models":              a.listModels,
+		"POST /models/{id}/load":   a.loadModel,
+		"POST /models/{id}/unload": a.unloadModel,
+
+		"GET /slots":                          a.listSlots,
+		"POST /slots/{model}/{slot}/{action}": a.slotAction,
 	} {
 		method, path, _ := strings.Cut(pattern, " ")
 		mux.HandleFunc(method+" /api/v1"+path, h)
