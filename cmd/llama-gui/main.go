@@ -43,6 +43,16 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 		return 0
 	case "healthcheck":
 		return healthcheck(args[1:], getenv, stdout, stderr)
+	case "doctor":
+		return doctor(args[1:], getenv, stdout, stderr)
+	case "status":
+		return status(args[1:], getenv, stdout, stderr)
+	case "logs":
+		return logsCommand(args[1:], getenv, stdout, stderr)
+	case "llama":
+		return llamaCommand(args[1:], getenv, stdout, stderr)
+	case "models":
+		return modelsCommand(args[1:], getenv, stdout, stderr)
 	case "help", "-h", "--help":
 		usage(stdout)
 		return 0
@@ -58,11 +68,27 @@ func usage(w io.Writer) {
 usage:
   llama-gui serve [flags]        run the service
   llama-gui healthcheck [flags]  exit 0 if the local service is healthy, else 1
+  llama-gui doctor [flags]       check GPU, permissions, disk, network and the active build
+  llama-gui status               server, build, loaded models and slots
+  llama-gui logs [-f] [-n N]     tail the llama-server log
+  llama-gui llama list           installed builds
+  llama-gui llama available [--channel stable|nightly]
+                                 released versions
+  llama-gui llama install <version> [--backend B]
+                                 download a build, waiting until it is done
+  llama-gui llama use <version>  switch build and restart
+  llama-gui llama remove <version>
+  llama-gui models list          the router's models
+  llama-gui models load <id>
+  llama-gui models unload <id>
   llama-gui version              print the version
 
-not available yet: doctor, status, logs, llama, models
+models pull and models rm arrive with the model library (M7).
 
-flags, each with an environment variable that it overrides:
+status, logs, llama and models talk to the local service; pass --addr or set
+LLAMA_GUI_ADDR if it is not on 127.0.0.1:8080.
+
+flags of serve, healthcheck and doctor, each with an environment variable that it overrides:
   --addr           LLAMA_GUI_ADDR           listen address (default 127.0.0.1:8080)
   --data           LLAMA_GUI_DATA           database, profiles and slot saves (default /data)
   --builds         LLAMA_GUI_BUILDS         downloaded llama.cpp binaries (default /builds)
@@ -118,7 +144,7 @@ func healthcheck(args []string, getenv func(string) string, stdout, stderr io.Wr
 		_, _ = fmt.Fprintf(stderr, "llama-gui: %v\n", err)
 		return 1
 	}
-	url, err := healthURL(cfg.Addr)
+	base, err := baseURL(cfg.Addr)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "llama-gui: %v\n", err)
 		return 1
@@ -126,7 +152,7 @@ func healthcheck(args []string, getenv func(string) string, stdout, stderr io.Wr
 	// A bare transport, because a proxy from the environment must not answer
 	// for the local service.
 	client := http.Client{Timeout: healthcheckTimeout, Transport: &http.Transport{}}
-	resp, err := client.Get(url)
+	resp, err := client.Get(base + "/api/v1/healthz")
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "llama-gui: %v\n", err)
 		return 1
@@ -139,9 +165,9 @@ func healthcheck(args []string, getenv func(string) string, stdout, stderr io.Wr
 	return 0
 }
 
-// healthURL turns a listen address into one to dial: a wildcard host such as
-// the image's ":8080" means this machine.
-func healthURL(addr string) (string, error) {
+// baseURL turns a listen address into one to dial: a wildcard host such as the
+// image's ":8080" means this machine.
+func baseURL(addr string) (string, error) {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
 		return "", fmt.Errorf("addr: %w", err)
@@ -149,5 +175,5 @@ func healthURL(addr string) (string, error) {
 	if ip, err := netip.ParseAddr(host); host == "" || (err == nil && ip.IsUnspecified()) {
 		host = "127.0.0.1"
 	}
-	return "http://" + net.JoinHostPort(host, port) + "/api/v1/healthz", nil
+	return "http://" + net.JoinHostPort(host, port), nil
 }
