@@ -17,7 +17,8 @@ type Connect = (
  * While the route is missing it stays disconnected and keeps retrying quietly.
  */
 export class Telemetry {
-	latest = $state<TelemetrySnapshot | null>(null);
+	// Raw: a snapshot is replaced whole every second, so deep proxies would only add cost.
+	latest = $state.raw<TelemetrySnapshot | null>(null);
 	/** Bind to LiveToggle. Paused keeps the connection but freezes `latest`. */
 	live = $state(true);
 	connected = $state(false);

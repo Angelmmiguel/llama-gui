@@ -62,7 +62,13 @@ export interface ServerStatus {
 	uptime_seconds: number;
 	/** meta or bodies. */
 	capture: string;
-	active_build?: string;
+	router_since?: string;
+	pid?: number;
+	restart_count?: number;
+	last_error?: string;
+	active_build?: { id: string; tag: string; backend: string } | null;
+	models_loaded?: number;
+	update_available?: boolean;
 }
 
 export interface Gpu {
@@ -170,24 +176,76 @@ export interface Profile {
 	extra_args?: string[];
 }
 
-export interface RouterModel {
-	id: string;
-	status?: { value?: string; exit_code?: number; args?: string[] };
-	[key: string]: unknown;
+export interface MemoryDevice {
+	/** `device` for a GPU, `host` for system memory. */
+	kind: string;
+	/** `CUDA0`, `Vulkan1`, `Host`. */
+	name: string;
+	model: number;
+	context: number;
+	compute: number;
 }
 
+export interface MemoryEstimate {
+	n_ctx: number;
+	/** Null while unloaded, for `effective`. */
+	devices: MemoryDevice[] | null;
+}
+
+export interface RouterModel {
+	id: string;
+	/** unloaded, loading, loaded or sleeping; tolerate others. */
+	status: string;
+	port?: number;
+	exit_code?: number;
+	failed?: boolean;
+	context_length?: number;
+	source?: string;
+	memory: { status?: string; min: MemoryEstimate; max: MemoryEstimate; effective: MemoryEstimate };
+}
+
+export interface InflightRequest {
+	id: number;
+	model: string;
+	endpoint: string;
+	started_at: string;
+	slot?: number;
+	task?: number;
+	/** `waiting` before upstream answers (queued or in prefill), then `responding`. */
+	phase: string;
+}
+
+/** A slot as sampled; see "Slot fields" in ARCHITECTURE. */
 export interface Slot {
 	id: number;
-	model?: string;
+	/** idle, prefill or decode. */
+	state: string;
+	cached: number;
+	prompt: number;
+	generated: number;
+	total: number;
 	n_ctx: number;
-	is_processing: boolean;
-	id_task: number | null;
-	n_prompt_tokens: number;
-	n_prompt_tokens_processed: number;
-	n_prompt_tokens_cache: number;
+	/** Stays set after the task finishes. */
+	task: number | null;
+	speed: number;
 	params?: Record<string, unknown>;
-	next_token?: { n_decoded: number }[];
-	[key: string]: unknown;
+}
+
+/** A model as sampled. Memory is flattened from the router's `memory.effective`. */
+export interface TelemetryModel {
+	id: string;
+	status: string;
+	memory: { total: number; devices: MemoryDevice[] };
+	slots: Slot[];
+	/** Why this tick could not read the model; slots then hold the last good reading. */
+	error?: string;
+}
+
+export interface SlotHistory {
+	model: string;
+	slot: number;
+	/** Oldest first, up to 90 s. */
+	samples: { state: string; speed: number }[];
 }
 
 export type SlotAction = 'save' | 'restore' | 'erase' | 'cancel';
@@ -200,7 +258,34 @@ export interface RequestFilters extends Query {
 	limit?: number;
 }
 
-export type RequestRecord = Record<string, unknown> & { id: string | number };
+export interface RequestRecord {
+	id: number;
+	started_at: string;
+	model: string;
+	endpoint: string;
+	method: string;
+	status: number;
+	slot: number | null;
+	task_id: number | null;
+	ttft_ms: number;
+	total_ms: number;
+	queue_ms: number;
+	prompt_n: number;
+	cache_n: number;
+	prompt_ms: number;
+	predicted_n: number;
+	predicted_ms: number;
+	predicted_per_second: number;
+	stream: boolean;
+	/** A classification such as `400 ctx`; empty on a plain success. */
+	error: string;
+}
+
+export interface RequestDetail extends RequestRecord {
+	/** Null unless capture kept it. */
+	body: { request: string; response: string } | null;
+}
+
 export type RequestSummary = Record<string, unknown>;
 
 export interface LogFilters extends Query {
@@ -210,9 +295,43 @@ export interface LogFilters extends Query {
 	limit?: number;
 }
 
-export type LogRecord = Record<string, unknown>;
+export interface LogRecord {
+	id: number;
+	ts: string;
+	level: string;
+	source: string;
+	model: string;
+	message: string;
+	raw?: string;
+}
+
 export type ServerEvent = Record<string, unknown>;
-export type TelemetrySnapshot = Record<string, unknown>;
+
+export interface TelemetrySnapshot {
+	time: string;
+	server: { state: string; error?: string };
+	models: TelemetryModel[];
+	throughput: { decode: number; prefill: number };
+	requests: {
+		in_flight: number;
+		processing: number;
+		deferred: number;
+		per_minute: number;
+		ttft_p50_ms: number;
+		ttft_p95_ms: number;
+	};
+	kv: { used: number; total: number };
+	gpus: Gpu[];
+	ram: { total: number; available: number };
+	in_flight: InflightRequest[];
+	series: {
+		decode: number[];
+		prefill: number[];
+		/** KV is a 0 to 1 ratio. */
+		spark: { prefill: number[]; ttft: number[]; rpm: number[]; kv: number[] };
+	};
+	slot_history: SlotHistory[];
+}
 
 const enc = encodeURIComponent;
 
@@ -231,7 +350,8 @@ export const activateBuild = (id: string) =>
 	request<unknown>('POST', `/builds/${enc(id)}/activate`);
 export const deleteBuild = (id: string) => request<unknown>('DELETE', `/builds/${enc(id)}`);
 
-export const listProfiles = () => request<Profile[]>('GET', '/profiles');
+export const listProfiles = () =>
+	request<{ profiles: Profile[] }>('GET', '/profiles').then((r) => r.profiles);
 export const createProfile = (body: Omit<Profile, 'id'> & { id?: string }) =>
 	request<Profile>('POST', '/profiles', { body });
 export const getProfile = (id: string) => request<Profile>('GET', `/profiles/${enc(id)}`);
@@ -239,18 +359,26 @@ export const updateProfile = (id: string, body: Profile) =>
 	request<Profile>('PUT', `/profiles/${enc(id)}`, { body });
 export const deleteProfile = (id: string) => request<unknown>('DELETE', `/profiles/${enc(id)}`);
 
-export const listModels = () => request<RouterModel[]>('GET', '/models');
+export const listModels = () =>
+	request<{ models: RouterModel[] }>('GET', '/models').then((r) => r.models);
 export const loadModel = (id: string) => request<unknown>('POST', `/models/${enc(id)}/load`);
 export const unloadModel = (id: string) => request<unknown>('POST', `/models/${enc(id)}/unload`);
 
-export const listSlots = () => request<Slot[]>('GET', '/slots');
-export const slotAction = (model: string, slot: number, action: SlotAction) =>
-	request<unknown>('POST', `/slots/${enc(model)}/${slot}/${action}`);
+export const listSlots = () =>
+	request<{ models: TelemetryModel[]; in_flight: InflightRequest[]; time: string }>(
+		'GET',
+		'/slots'
+	);
+/** `filename` is required by save and restore: a single path element. */
+export const slotAction = (model: string, slot: number, action: SlotAction, filename?: string) =>
+	request<unknown>('POST', `/slots/${enc(model)}/${slot}/${action}`, {
+		body: filename === undefined ? undefined : { filename }
+	});
 
 export const listRequests = (query?: RequestFilters) =>
-	request<RequestRecord[]>('GET', '/requests', { query });
+	request<{ requests: RequestRecord[]; next_cursor: string }>('GET', '/requests', { query });
 export const getRequest = (id: string | number) =>
-	request<RequestRecord>('GET', `/requests/${enc(id)}`);
+	request<RequestDetail>('GET', `/requests/${enc(id)}`);
 export const getRequestSummary = (query?: RequestFilters) =>
 	request<RequestSummary>('GET', '/requests/summary', { query });
 
@@ -274,6 +402,10 @@ export interface StreamOptions {
 	retryMs?: number;
 	/** Cap for the doubling delay, in ms. */
 	maxRetryMs?: number;
+	/** Follow this named event, as `/logs/stream`'s `log`, instead of unnamed messages. */
+	event?: string;
+	/** Query parameters of the route. */
+	query?: Query;
 }
 
 /**
@@ -289,19 +421,19 @@ export function stream<T>(
 	onMessage: (message: T) => void,
 	options: StreamOptions = {}
 ): () => void {
-	const { onStatus, retryMs = 1000, maxRetryMs = 30_000 } = options;
+	const { onStatus, retryMs = 1000, maxRetryMs = 30_000, event: name, query } = options;
 	let source: EventSource | undefined;
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	let delay = retryMs;
 	let stopped = false;
 
 	function connect() {
-		source = new EventSource(url(path));
+		source = new EventSource(url(path, query));
 		source.onopen = () => {
 			delay = retryMs;
 			onStatus?.(true);
 		};
-		source.onmessage = (event: MessageEvent<string>) => {
+		const handle = (event: MessageEvent<string>) => {
 			let message: T;
 			try {
 				message = JSON.parse(event.data) as T;
@@ -310,6 +442,8 @@ export function stream<T>(
 			}
 			onMessage(message);
 		};
+		if (name) source.addEventListener(name, handle);
+		else source.onmessage = handle;
 		source.onerror = () => {
 			onStatus?.(false);
 			if (source?.readyState !== EventSource.CLOSED || stopped) return;

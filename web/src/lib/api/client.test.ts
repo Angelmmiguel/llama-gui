@@ -48,8 +48,14 @@ class FakeEventSource {
 	onmessage: ((e: { data: string }) => void) | null = null;
 	onerror: (() => void) | null = null;
 
+	listeners: Record<string, (e: { data: string }) => void> = {};
+
 	constructor(readonly url: string) {
 		FakeEventSource.instances.push(this);
+	}
+
+	addEventListener(name: string, listener: (e: { data: string }) => void) {
+		this.listeners[name] = listener;
 	}
 
 	close() {
@@ -81,6 +87,15 @@ describe('stream', () => {
 		expect(source.url).toBe('/api/v1/telemetry/stream');
 		source.onmessage?.({ data: '{"a":1}' });
 		source.onmessage?.({ data: 'not json' });
+		expect(got).toEqual([{ a: 1 }]);
+	});
+
+	it('follows a named event with a query', () => {
+		const got: unknown[] = [];
+		stream('/logs/stream', (m) => got.push(m), { event: 'log', query: { backlog: 9 } });
+		const [source] = FakeEventSource.instances;
+		expect(source.url).toBe('/api/v1/logs/stream?backlog=9');
+		source.listeners.log({ data: '{"a":1}' });
 		expect(got).toEqual([{ a: 1 }]);
 	});
 

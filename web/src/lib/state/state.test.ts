@@ -10,6 +10,9 @@ const STATUS: ServerStatus = {
 	capture: 'meta'
 };
 
+// The state only stores snapshots, so a marker stands in for the whole shape.
+const snap = (n: number) => ({ n }) as unknown as TelemetrySnapshot;
+
 describe('ServerState', () => {
 	it('starts as connecting', () => {
 		expect(new ServerState(async () => STATUS).state).toBe('connecting');
@@ -85,8 +88,8 @@ describe('Telemetry', () => {
 		expect(telemetry.connected).toBe(false);
 		status(true);
 		expect(telemetry.connected).toBe(true);
-		emit({ n: 1 });
-		emit({ n: 2 });
+		emit(snap(1));
+		emit(snap(2));
 		expect(telemetry.latest).toEqual({ n: 2 });
 		status(false);
 		expect(telemetry.connected).toBe(false);
@@ -96,12 +99,12 @@ describe('Telemetry', () => {
 	it('freezes while paused', () => {
 		const { telemetry, emit } = setup();
 		telemetry.subscribe();
-		emit({ n: 1 });
+		emit(snap(1));
 		telemetry.live = false;
-		emit({ n: 2 });
+		emit(snap(2));
 		expect(telemetry.latest).toEqual({ n: 1 });
 		telemetry.live = true;
-		emit({ n: 3 });
+		emit(snap(3));
 		expect(telemetry.latest).toEqual({ n: 3 });
 	});
 
