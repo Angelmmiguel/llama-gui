@@ -18,3 +18,13 @@ linters:
       # from an installed build is this program's job.
       - linters: [gosec]
         text: "G204"
+      # G202 flags concatenated SQL. The store only concatenates constant
+      # clauses; every value is a bound parameter.
+      - linters: [gosec]
+        path: internal/store/
+        text: "G202"
+      # Tests and the test double hold no production I/O or secrets.
+      - linters: [bodyclose, errcheck, gosec]
+        path: _test\.go
+      - linters: [errcheck, gosec]
+        path: internal/fakellama/

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -148,7 +149,8 @@ func TestModelsLifecycle(t *testing.T) {
 }
 
 func asUpstream(err error, target **llama.ErrUpstream) bool {
-	ue, ok := err.(*llama.ErrUpstream)
+	var ue *llama.ErrUpstream
+	ok := errors.As(err, &ue)
 	*target = ue
 	return ok
 }

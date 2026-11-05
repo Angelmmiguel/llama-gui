@@ -86,7 +86,7 @@ func handler(fsys fs.FS) http.Handler {
 		} else {
 			w.Header().Set("Cache-Control", "no-cache")
 		}
-		http.ServeFileFS(w, r, fsys, name)
+		http.ServeFileFS(w, r, fsys, name) //nolint:gosec // G703: fsys is the embedded build and name passed fs.ValidPath.
 	})
 }
 

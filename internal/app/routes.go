@@ -21,7 +21,7 @@ func routes(apiHandler, ui, proxy http.Handler) http.Handler {
 			if r.URL.RawQuery != "" {
 				target += "?" + r.URL.RawQuery
 			}
-			http.Redirect(w, r, target, http.StatusFound)
+			http.Redirect(w, r, target, http.StatusFound) //nolint:gosec // G710: the target is a fixed local path; only the query is carried over.
 		case strings.HasPrefix(path, "/ui/"):
 			stripped.ServeHTTP(w, r)
 		case strings.HasPrefix(path, "/api/"):

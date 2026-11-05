@@ -76,7 +76,7 @@ func (c *Client) raw(ctx context.Context, method, path string, q url.Values, bod
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
 	if err != nil {
 		return nil, err

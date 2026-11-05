@@ -2,6 +2,7 @@ package fakellama
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand/v2"
 	"net/http"
@@ -107,7 +108,7 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request, kind str
 		return
 	}
 	if err := s.ensureLoaded(r.Context(), m); err != nil {
-		if err == errNotLoaded {
+		if errors.Is(err, errNotLoaded) {
 			s.notLoaded(w, m)
 		}
 		return
@@ -369,7 +370,7 @@ func (s *Server) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.ensureLoaded(r.Context(), m); err != nil {
-		if err == errNotLoaded {
+		if errors.Is(err, errNotLoaded) {
 			s.notLoaded(w, m)
 		}
 		return

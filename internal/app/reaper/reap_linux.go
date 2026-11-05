@@ -77,7 +77,7 @@ type siginfo struct {
 func peekExited() (int, error) {
 	var info siginfo
 	for {
-		_, _, errno := syscall.Syscall6(syscall.SYS_WAITID, pAll, 0, uintptr(unsafe.Pointer(&info)),
+		_, _, errno := syscall.Syscall6(syscall.SYS_WAITID, pAll, 0, uintptr(unsafe.Pointer(&info)), //nolint:gosec // G103: waitid has no wrapper in syscall.
 			wExited|syscall.WNOHANG|wNoWait, 0, 0)
 		switch errno {
 		case 0:
