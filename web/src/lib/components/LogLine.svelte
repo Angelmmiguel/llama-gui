@@ -15,11 +15,39 @@
 		level?: string;
 		/** Animate in, for the newest line. */
 		rise?: boolean;
+		/** Grid only: adds a model column; empty shows blank. */
+		model?: string;
+		/** Grid only: makes the row a toggle between one truncated line and the whole text. */
+		ontoggle?: () => void;
+		/** Grid only: wrap the whole text. */
+		expanded?: boolean;
 	}
 
-	let { variant = 'grid', ts, source, msg, n, level = '', rise = false }: Props = $props();
+	let {
+		variant = 'grid',
+		ts,
+		source,
+		msg,
+		n,
+		level = '',
+		rise = false,
+		model,
+		ontoggle,
+		expanded = false
+	}: Props = $props();
 
 	const severity = $derived(level.toUpperCase());
+
+	// Selecting text to copy it must not collapse the line under the cursor.
+	function click() {
+		if (getSelection()?.isCollapsed !== false) ontoggle?.();
+	}
+
+	function keydown(event: KeyboardEvent) {
+		if (event.key !== 'Enter' && event.key !== ' ') return;
+		event.preventDefault();
+		ontoggle?.();
+	}
 </script>
 
 {#if variant === 'tail'}
@@ -29,12 +57,27 @@
 		<span class="msg">{msg}</span>
 	</div>
 {:else}
-	<div class="grid" class:rise class:warn={severity === 'WARN'} class:error={severity === 'ERROR'}>
+	<!-- The role is a button whenever tabindex is set. -->
+	<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+	<div
+		class="grid"
+		class:rise
+		class:warn={severity === 'WARN'}
+		class:error={severity === 'ERROR'}
+		class:with-model={model !== undefined}
+		class:toggle={ontoggle}
+		role={ontoggle ? 'button' : undefined}
+		tabindex={ontoggle ? 0 : undefined}
+		aria-expanded={ontoggle ? expanded : undefined}
+		onclick={ontoggle ? click : undefined}
+		onkeydown={ontoggle ? keydown : undefined}
+	>
 		<span class="n">{n}</span>
 		<span class="time">{ts}</span>
 		<span class="level">{level}</span>
-		<span style:color={sourceColor(source)}>{source}</span>
-		<span class="line ellipsis">{msg}</span>
+		<span class="ellipsis" style:color={sourceColor(source)}>{source}</span>
+		{#if model !== undefined}<span class="model ellipsis">{model}</span>{/if}
+		<span class="line" class:ellipsis={!expanded} class:whole={expanded}>{msg}</span>
 	</div>
 {/if}
 
@@ -55,6 +98,27 @@
 		font-family: var(--font-mono);
 		font-size: var(--fs-12);
 		line-height: 1.5;
+	}
+
+	.with-model {
+		grid-template-columns: 56px 70px 52px 56px 110px minmax(0, 1fr);
+	}
+
+	.toggle {
+		cursor: pointer;
+	}
+
+	.toggle:hover {
+		background: var(--bg-selected);
+	}
+
+	.model {
+		color: var(--fg-off);
+	}
+
+	.whole {
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
 	}
 
 	.n {
