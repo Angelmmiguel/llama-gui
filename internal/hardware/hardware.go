@@ -16,6 +16,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/Angelmmiguel/llama-gui/internal/app/reaper"
 )
 
 const commandTimeout = 5 * time.Second
@@ -375,5 +377,11 @@ func disks(paths []string) []Disk {
 func runCommand(ctx context.Context, name string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.WaitDelay = time.Second
-	return cmd.Output()
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	if err := reaper.Start(cmd); err != nil {
+		return nil, err
+	}
+	err := reaper.Wait(cmd)
+	return out.Bytes(), err
 }

@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"syscall"
 	"time"
+
+	"github.com/Angelmmiguel/llama-gui/internal/app/reaper"
 )
 
 // ErrNoExec means files in a directory cannot be executed, typically a noexec mount.
@@ -35,7 +37,10 @@ func CanExecute(dir string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
 	defer cancel()
 	for attempt := 0; ; attempt++ {
-		err = exec.CommandContext(ctx, path).Run()
+		cmd := exec.CommandContext(ctx, path)
+		if err = reaper.Start(cmd); err == nil {
+			err = reaper.Wait(cmd)
+		}
 		// A concurrent fork can briefly inherit the write descriptor.
 		if errors.Is(err, syscall.ETXTBSY) && attempt < 5 {
 			time.Sleep(50 * time.Millisecond)

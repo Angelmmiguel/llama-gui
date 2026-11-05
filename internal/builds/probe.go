@@ -1,6 +1,7 @@
 package builds
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -11,6 +12,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/Angelmmiguel/llama-gui/internal/app/reaper"
 )
 
 const (
@@ -141,7 +144,13 @@ func runCommand(ctx context.Context, name string, args ...string) ([]byte, error
 	for attempt := 0; ; attempt++ {
 		cmd := exec.CommandContext(ctx, name, args...)
 		cmd.WaitDelay = time.Second
-		out, err := cmd.CombinedOutput()
+		var buf bytes.Buffer
+		cmd.Stdout, cmd.Stderr = &buf, &buf
+		err := reaper.Start(cmd)
+		if err == nil {
+			err = reaper.Wait(cmd)
+		}
+		out := buf.Bytes()
 		// A concurrent fork can briefly hold a just-written binary open for writing.
 		if errors.Is(err, syscall.ETXTBSY) && attempt < 5 {
 			time.Sleep(50 * time.Millisecond)
