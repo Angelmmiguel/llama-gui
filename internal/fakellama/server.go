@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -284,11 +285,39 @@ func hostDevice(model, ctx, compute int64) map[string]any {
 	return map[string]any{"kind": "host", "name": "Host", "model": model, "context": ctx, "compute": compute}
 }
 
+// modelBytes is the size of the preset's model file, so a demo can show realistic
+// memory from sparse files; anything unreadable gets the size of the real capture.
+func modelBytes(m *model) int64 {
+	for line := range strings.Lines(m.text) {
+		if path, ok := strings.CutPrefix(strings.TrimSpace(line), "model = "); ok {
+			if info, err := os.Stat(path); err == nil && info.Size() > 4096 {
+				return info.Size()
+			}
+		}
+	}
+	return baseModel
+}
+
+// devices places a model on the host or, with FAKE_LLAMA_GPUS, on the emulated GPU
+// its name hashes to, as a real router reports it.
+func (s *Server) devices(m *model, compute int64) []any {
+	model, ctx := modelBytes(m), int64(m.ctx)*23040
+	if s.opts.GPUs == 0 {
+		return []any{hostDevice(model, ctx, compute)}
+	}
+	var sum int
+	for _, c := range m.id {
+		sum += int(c)
+	}
+	return []any{map[string]any{"kind": "device", "name": fmt.Sprintf("CUDA%d", sum%s.opts.GPUs), "total": int64(24) << 30,
+		"free": int64(24)<<30 - model, "model": model, "context": ctx, "compute": compute}}
+}
+
 func (s *Server) modelJSON(m *model) map[string]any {
-	est := map[string]any{"n_ctx": m.ctx, "devices": []any{hostDevice(baseModel, int64(m.ctx)*23040, 110120960)}}
+	est := map[string]any{"n_ctx": m.ctx, "devices": s.devices(m, 110120960)}
 	var effective any
 	if m.state == stateLoaded {
-		effective = map[string]any{"n_ctx": m.ctx, "devices": []any{hostDevice(baseModel, int64(m.ctx)*23040, 17451040)}}
+		effective = map[string]any{"n_ctx": m.ctx, "devices": s.devices(m, 17451040)}
 	}
 	out := map[string]any{
 		"id": m.id, "aliases": []string{}, "tags": []string{}, "object": "model", "owned_by": "llamacpp",

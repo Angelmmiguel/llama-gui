@@ -31,6 +31,7 @@ type Options struct {
 	LoadDelay, TokenDelay, CrashAfter time.Duration
 	Tokens                            int // tokens generated when the request sets no limit
 	Ctx                               int // prompts with more words than this get a 400
+	GPUs                              int // emulated GPUs models report memory on; 0 is the host
 }
 
 // ParseArgs reads the flags llama-gui passes and ignores everything else.
@@ -91,6 +92,7 @@ func (o *Options) ApplyEnv(getenv func(string) string) {
 	o.TokenDelay = time.Duration(num("FAKE_LLAMA_TOKEN_MS", 5)) * time.Millisecond
 	o.Tokens = num("FAKE_LLAMA_TOKENS", 16)
 	o.Ctx = num("FAKE_LLAMA_CTX", 2000)
+	o.GPUs = num("FAKE_LLAMA_GPUS", 0)
 	o.CrashAfter = time.Duration(num("FAKE_LLAMA_CRASH_AFTER_MS", 0)) * time.Millisecond
 }
 
