@@ -201,3 +201,15 @@ func TestTimings(t *testing.T) {
 		t.Errorf("%+v", found)
 	}
 }
+
+func TestReload(t *testing.T) {
+	c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/models" || r.URL.Query().Get("reload") != "1" {
+			t.Errorf("%s", r.URL)
+		}
+		w.Write(fixture(t, "models-unloaded.json"))
+	})
+	if ms, err := c.Reload(context.Background()); err != nil || len(ms) != 1 {
+		t.Errorf("%v %v", ms, err)
+	}
+}

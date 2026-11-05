@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -80,18 +81,22 @@ func New(opts Options, logOut io.Writer) (*Server, error) {
 	s := &Server{opts: opts, byID: map[string]*model{}, nextPort: 54000,
 		log: &logger{w: logOut, start: time.Now(), jsonl: opts.JSONL}}
 	for _, p := range pm {
-		m := &model{presetModel: p, state: stateUnloaded, ctx: 4096}
-		for _, e := range p.kvs {
-			if e.key == "ctx-size" {
-				if n, err := strconv.Atoi(e.val); err == nil && n > 0 {
-					m.ctx = n
-				}
-			}
-		}
+		m := &model{presetModel: p, state: stateUnloaded, ctx: presetCtx(p)}
 		s.models = append(s.models, m)
 		s.byID[m.id] = m
 	}
 	return s, nil
+}
+
+func presetCtx(p presetModel) int {
+	for _, e := range p.kvs {
+		if e.key == "ctx-size" {
+			if n, err := strconv.Atoi(e.val); err == nil && n > 0 {
+				return n
+			}
+		}
+	}
+	return 4096
 }
 
 // Banner logs the startup lines a router prints before serving.
@@ -299,7 +304,42 @@ func (s *Server) modelJSON(m *model) map[string]any {
 	return out
 }
 
+// reload re-reads the preset: new sections appear, and sections that went away
+// disappear unless they are loaded. A running model keeps what it started with.
+func (s *Server) reload() {
+	pm, err := loadPreset(s.opts.Preset)
+	if err != nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	keep := map[string]bool{}
+	for _, p := range pm {
+		keep[p.id] = true
+		if m, ok := s.byID[p.id]; ok {
+			if m.state == stateUnloaded {
+				m.presetModel = p
+				m.ctx = presetCtx(p)
+			}
+			continue
+		}
+		m := &model{presetModel: p, state: stateUnloaded, ctx: presetCtx(p)}
+		s.models = append(s.models, m)
+		s.byID[m.id] = m
+	}
+	s.models = slices.DeleteFunc(s.models, func(m *model) bool {
+		if keep[m.id] || m.state != stateUnloaded {
+			return false
+		}
+		delete(s.byID, m.id)
+		return true
+	})
+}
+
 func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Get("reload") == "1" {
+		s.reload()
+	}
 	s.mu.Lock()
 	data := make([]any, 0, len(s.models))
 	for _, m := range s.models {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strconv"
 )
 
@@ -77,6 +78,17 @@ func PortFromArgs(args []string) int {
 		}
 	}
 	return 0
+}
+
+// Reload makes the router re-read its preset and returns the resulting models.
+func (c *Client) Reload(ctx context.Context) ([]Model, error) {
+	var r struct {
+		Data []Model `json:"data"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/models", url.Values{"reload": {"1"}}, nil, &r); err != nil {
+		return nil, err
+	}
+	return r.Data, nil
 }
 
 // Models lists the router's models.

@@ -375,3 +375,29 @@ func TestMetricsDisabled(t *testing.T) {
 		t.Error("want 501")
 	}
 }
+
+func TestReloadRereadsThePreset(t *testing.T) {
+	var preset string
+	_, c, _ := newServer(t, func(o *Options) { preset = o.Preset })
+	ctx := context.Background()
+	if err := os.WriteFile(preset, []byte("[smolvlm]\nmodel = /m/a.gguf\n\n[added]\nmodel = /m/c.gguf\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ids := func(ms []llama.Model, err error) string {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, m := range ms {
+			out = append(out, m.ID)
+		}
+		return strings.Join(out, ",")
+	}
+	if got := ids(c.Models(ctx)); got != "smolvlm,other" {
+		t.Errorf("before reload: %s", got)
+	}
+	if got := ids(c.Reload(ctx)); got != "smolvlm,added" {
+		t.Errorf("after reload: %s", got)
+	}
+}
