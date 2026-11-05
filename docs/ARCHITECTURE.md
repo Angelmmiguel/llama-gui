@@ -50,11 +50,14 @@ Captured from a real `b12132` CPU build in `debian:13-slim`; the raw responses a
   missing fields become zero values, and an unparseable log line is kept as raw text.
 - **Releases.** `v*` is stable and has one asset, `nightly-tag.txt`, holding its `b*` tag.
   Binaries live on `b*` tags. Classify by tag name, never by GitHub's `prerelease` flag,
-  because old `b*` tags were full releases.
+  because old `b*` tags were full releases. Older `master-*` tags are ignored. The API's order is not
+  publication order, a stable tag is found every page or two at `per_page=100`, and `digest`
+  (`sha256:<hex>`) is null on old assets.
 - **Assets.** `llama-<tag>-bin-ubuntu-{x64,arm64,vulkan-x64,vulkan-arm64,cuda-12.8-x64,cuda-13.4-x64,
   cuda-13.4-arm64,rocm-10.0-x64,sycl-fp16-x64,sycl-fp32-x64,openvino-<ver>-x64}.tar.gz`, extracting
   to a `llama-<tag>/` directory. CUDA also needs `cudart-llama-<tag>-bin-ubuntu-cuda-<ver>-<arch>.tar.gz`,
-  extracted next to the binaries (rpath is `$ORIGIN`). Match with patterns; the versions change.
+  whose top directory is the asset's name rather than `llama-<tag>/`, extracted next to the binaries
+  (rpath is `$ORIGIN`). Match with patterns; the versions change.
 - **Probe.** `llama-server --version` prints `version: 0.9.0-dev (build 12132, commit 2ada83079)`.
   `--list-devices` and `--help` have no stable schema, so parse them loosely.
 - **Starting.** Without a model argument `llama-server` is the router. Flags used:
@@ -94,7 +97,8 @@ Captured from a real `b12132` CPU build in `debian:13-slim`; the raw responses a
 
 - `/data/llama-gui.db`: SQLite through `modernc.org/sqlite` (pure Go), WAL, one writer connection.
   Tables: `kv`, `profiles`, `requests`, `request_bodies`, `log_lines`, `events`. Retention prunes by age.
-- `/builds/<tag>-<backend>/`: extracted release plus `manifest.json`, written last so a partial install
+- `/builds/<tag>-<backend>/`, where `<tag>` is the `b*` tag holding the binaries: extracted release plus
+  `manifest.json`, written last so a partial install
   never looks installed. The active build's id is in `kv`, and losing `/builds` only means re-downloading.
 - `/models`: GGUF files in the router's layout (a file, or a directory for multimodal and shards).
 - `/data/preset.ini`: rendered from `profiles`, atomically, on every change. `/data/slots/`: slot saves.
