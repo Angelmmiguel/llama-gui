@@ -62,6 +62,8 @@ export interface ServerStatus {
 	uptime_seconds: number;
 	/** meta or bodies. */
 	capture: string;
+	/** The `-lv` level the router runs with. */
+	log_verbosity?: number;
 	router_since?: string;
 	pid?: number;
 	restart_count?: number;
@@ -252,10 +254,13 @@ export type SlotAction = 'save' | 'restore' | 'erase' | 'cancel';
 
 export interface RequestFilters extends Query {
 	model?: string;
+	/** One path, or several separated by commas. */
 	endpoint?: string;
 	status?: string;
 	since?: string;
 	limit?: number;
+	until?: string;
+	cursor?: string;
 }
 
 export interface RequestRecord {
@@ -282,17 +287,76 @@ export interface RequestRecord {
 }
 
 export interface RequestDetail extends RequestRecord {
+	/** Milliseconds between the first 120 tokens; empty when not streamed. */
+	gaps: number[];
 	/** Null unless capture kept it. */
 	body: { request: string; response: string } | null;
 }
 
-export type RequestSummary = Record<string, unknown>;
+export interface Percentiles {
+	p50: number;
+	p95: number;
+	p99: number;
+}
+
+export interface RequestSummaryModel {
+	model: string;
+	count: number;
+	/** Medians in ms, over the requests that reported each. */
+	queue_ms: number;
+	prefill_ms: number;
+	decode_ms: number;
+	total_ms: number;
+}
+
+export interface ScatterPoint {
+	id: number;
+	started_at: string;
+	model: string;
+	status: number;
+	prompt_n: number;
+	cache_n: number;
+	predicted_n: number;
+	predicted_ms: number;
+	ttft_ms: number;
+	total_ms: number;
+	stream: boolean;
+}
+
+export interface RequestSummary {
+	since: string;
+	until: string;
+	/** Only the newest rows of the window were looked at. */
+	truncated: boolean;
+	kpis: {
+		requests: number;
+		errors: number;
+		per_minute: number;
+		prompt_tokens: number;
+		cached_tokens: number;
+		predicted_tokens: number;
+		decode_speed: number;
+	};
+	ttft: Percentiles;
+	total: Percentiles;
+	/** `status` is a code, or a classified error such as `400 ctx`. */
+	statuses: { status: string; count: number }[];
+	models: RequestSummaryModel[];
+	/** The newest 500. */
+	scatter: ScatterPoint[];
+}
 
 export interface LogFilters extends Query {
 	q?: string;
+	/** One value, or several separated by commas. */
 	level?: string;
+	/** One value, or several separated by commas. */
 	source?: string;
+	model?: string;
+	since?: string;
+	until?: string;
 	limit?: number;
+	cursor?: string;
 }
 
 export interface LogRecord {
@@ -305,7 +369,31 @@ export interface LogRecord {
 	raw?: string;
 }
 
-export type ServerEvent = Record<string, unknown>;
+export interface ServerEvent {
+	id: number;
+	ts: string;
+	kind: string;
+	/** info, warn or error; tolerate others. */
+	severity: string;
+	title: string;
+	meta?: Record<string, string>;
+}
+
+export interface LogVolumeMinute {
+	minute: string;
+	debug: number;
+	info: number;
+	warn: number;
+	error: number;
+	other: number;
+}
+
+export interface LogVolume {
+	/** Oldest first, always 60. */
+	minutes: LogVolumeMinute[];
+	/** Counted since local midnight. */
+	today: { warn: number; error: number };
+}
 
 export interface TelemetrySnapshot {
 	time: string;
@@ -382,8 +470,15 @@ export const getRequest = (id: string | number) =>
 export const getRequestSummary = (query?: RequestFilters) =>
 	request<RequestSummary>('GET', '/requests/summary', { query });
 
-export const listLogs = (query?: LogFilters) => request<LogRecord[]>('GET', '/logs', { query });
-export const listEvents = () => request<ServerEvent[]>('GET', '/events');
+export const requestsCsvUrl = (query?: RequestFilters) =>
+	url('/requests', { ...query, format: 'csv' });
+
+export const listLogs = (query?: LogFilters) =>
+	request<{ lines: LogRecord[]; next_cursor: string }>('GET', '/logs', { query });
+export const getLogVolume = () => request<LogVolume>('GET', '/logs/volume');
+export const logsDownloadUrl = (query?: LogFilters) => url('/logs/download', query);
+export const listEvents = (since?: string) =>
+	request<{ events: ServerEvent[] }>('GET', '/events', { query: { since } });
 
 export const getTelemetry = () => request<TelemetrySnapshot>('GET', '/telemetry');
 

@@ -81,3 +81,17 @@ export function formatRate(n: number | null | undefined): string {
 export function formatTokPerSec(n: number | null | undefined): string {
 	return isNumber(n) ? `${formatRate(n)} tok/s` : MISSING;
 }
+
+/** Local wall clock from an ISO time: `14:32:08`. */
+export function formatClock(iso: string | null | undefined): string {
+	const d = new Date(iso ?? NaN);
+	if (Number.isNaN(d.getTime())) return MISSING;
+	return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+/** Local date and minute from an ISO time, for lists spanning days: `11-05 14:32`. */
+export function formatDayClock(iso: string | null | undefined): string {
+	const d = new Date(iso ?? NaN);
+	if (Number.isNaN(d.getTime())) return MISSING;
+	return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}

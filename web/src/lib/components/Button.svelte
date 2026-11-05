@@ -23,6 +23,8 @@
 		fill?: boolean;
 		/** Full width, for button grids. */
 		block?: boolean;
+		/** Renders a link that saves the target, for exports. */
+		downloadHref?: string;
 		children: Snippet;
 	}
 
@@ -34,26 +36,30 @@
 		dashed = false,
 		fill = false,
 		block = false,
+		downloadHref,
 		type = 'button',
 		children,
 		...rest
 	}: Props = $props();
-</script>
 
-<button
-	{type}
-	{...rest}
-	class={[
+	const classes = $derived([
 		'button',
 		`variant-${variant}`,
 		`size-${size}`,
 		tone && `tone-${tone}`,
 		{ mono, dashed, fill, block },
 		rest.class
-	]}
->
-	{@render children()}
-</button>
+	]);
+</script>
+
+{#if downloadHref}
+	<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- an API route, not a page. -->
+	<a href={downloadHref} download title={rest.title} class={classes}>{@render children()}</a>
+{:else}
+	<button {type} {...rest} class={classes}>
+		{@render children()}
+	</button>
+{/if}
 
 <style>
 	.button {

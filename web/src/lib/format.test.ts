@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
 	formatBytes,
+	formatClock,
+	formatDayClock,
 	formatDuration,
 	formatGB,
 	formatInt,
@@ -102,4 +104,18 @@ it('every formatter shows a dash for missing or broken values', () => {
 		expect(f(undefined)).toBe('—');
 		expect(f(NaN)).toBe('—');
 	}
+});
+
+describe('clock times', () => {
+	const iso = new Date(2026, 10, 5, 14, 3, 8).toISOString();
+
+	it('reads the local clock', () => {
+		expect(formatClock(iso)).toBe('14:03:08');
+		expect(formatDayClock(iso)).toBe('11-05 14:03');
+	});
+
+	it('shows missing for nonsense', () => {
+		expect(formatClock('nope')).toBe('—');
+		expect(formatDayClock(null)).toBe('—');
+	});
 });

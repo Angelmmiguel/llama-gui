@@ -55,6 +55,9 @@
 <style>
 	.group {
 		display: inline-flex;
+		flex-wrap: wrap;
+		max-width: 100%;
+		box-sizing: border-box;
 		align-self: flex-start;
 		gap: var(--space-2);
 		border: 1px solid var(--border-panel);
