@@ -1,0 +1,20 @@
+# Defaults (errcheck, govet, ineffassign, staticcheck, unused) plus the checks
+# that matter for a server that downloads and runs binaries.
+version: "2"
+
+linters:
+  enable:
+    - bodyclose
+    - errorlint
+    - gosec
+  exclusions:
+    rules:
+      # G304 flags reads whose path comes from a variable. Every such path here
+      # is built from the operator's directories, never directly from a
+      # request; tags and file names from the network are validated first.
+      - linters: [gosec]
+        text: "G304"
+      # G204 flags subprocesses started from a variable. Starting llama-server
+      # from an installed build is this program's job.
+      - linters: [gosec]
+        text: "G204"

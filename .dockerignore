@@ -1,0 +1,13 @@
+# Only the sources the Dockerfile copies reach the build context; local state
+# in tmp/ and the Go and Node caches never do.
+*
+!go.mod
+!go.sum
+!cmd/
+!internal/
+!web/
+web/node_modules/
+web/.svelte-kit/
+web/build/
+web/test-results/
+web/playwright-report/
