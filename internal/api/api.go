@@ -176,6 +176,10 @@ func Handler(deps Deps) http.Handler {
 
 		"GET /slots":                          a.listSlots,
 		"POST /slots/{model}/{slot}/{action}": a.slotAction,
+
+		"GET /requests":         a.listRequests,
+		"GET /requests/summary": a.requestSummary,
+		"GET /requests/{id}":    a.getRequest,
 	} {
 		method, path, _ := strings.Cut(pattern, " ")
 		mux.HandleFunc(method+" /api/v1"+path, h)
