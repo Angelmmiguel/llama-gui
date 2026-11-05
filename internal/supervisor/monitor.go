@@ -13,6 +13,13 @@ const requestTimeout = 10 * time.Second
 // and unload idle models. remembered stays untouched until the restore is done, so
 // a crash in between does not forget what should be loaded.
 func (s *Supervisor) monitor(ctx context.Context, client *llama.Client, wanted []string) {
+	// A profile saved between the router reading its preset and answering /health
+	// found nobody to tell, so the preset is always read again once it is up.
+	rctx, cancel := context.WithTimeout(ctx, requestTimeout)
+	if _, err := client.Reload(rctx); err != nil {
+		s.log.Warn("reloading the preset", "error", err)
+	}
+	cancel()
 	tick := time.NewTicker(s.opts.PollInterval)
 	defer tick.Stop()
 	restored := len(wanted) == 0
