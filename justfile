@@ -24,7 +24,7 @@ dev:
 
 # Run the Go and web test suites.
 test: web-test
-    go test -race ./...
+    CGO_ENABLED=1 go test -race ./...
 
 # Vet and lint everything.
 lint: web-check
