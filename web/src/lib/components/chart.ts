@@ -10,14 +10,16 @@ export interface ChartPaths {
 /**
  * Maps values onto a w×h view, evenly spaced across the full width. Values are
  * clamped to the range, and non-finite ones are dropped because telemetry can
- * have gaps. A single value draws as a flat line.
+ * have gaps. A single value draws as a flat line. Given slots, the values take that
+ * many positions and a shorter line stops early, as one still being measured does.
  */
 export function chartPaths(
 	values: readonly number[],
 	w: number,
 	h: number,
 	min?: number,
-	max?: number
+	max?: number,
+	slots?: number
 ): ChartPaths {
 	const finite = values.filter(Number.isFinite);
 	if (finite.length === 0) return { line: '', area: '', endY: h };
@@ -27,9 +29,14 @@ export function chartPaths(
 	const span = hi - lo || 1;
 	const y = (v: number) => h - ((Math.max(lo, Math.min(hi, v)) - lo) / span) * h;
 
-	const points = finite.length === 1 ? [finite[0], finite[0]] : finite;
-	const last = points.length - 1;
-	const line =
-		'M' + points.map((v, i) => `${((i / last) * w).toFixed(1)},${y(v).toFixed(1)}`).join(' L');
-	return { line, area: `${line} L${w},${h} L0,${h} Z`, endY: y(points[last]) };
+	const points = finite.length === 1 && !slots ? [finite[0], finite[0]] : finite;
+	const last = Math.max((slots ?? points.length) - 1, 1);
+	const x = (i: number) => (i / last) * w;
+	const line = 'M' + points.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' L');
+	const end = slots ? x(points.length - 1).toFixed(1) : w;
+	return {
+		line,
+		area: `${line} L${end},${h} L0,${h} Z`,
+		endY: y(points[points.length - 1])
+	};
 }

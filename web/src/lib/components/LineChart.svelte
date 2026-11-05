@@ -15,6 +15,8 @@
 		area?: boolean;
 		/** Dot at the newest point. */
 		endDot?: boolean;
+		/** Positions across the width, when the line may stop short of them. */
+		slots?: number;
 	}
 
 	interface Props {
@@ -52,7 +54,7 @@
 
 	const top = $derived(max ?? Math.max(min + 1, ...series.flatMap((s) => s.data)));
 	const drawn = $derived(
-		series.map((s) => ({ ...s, paths: chartPaths(s.data, VIEW_WIDTH, height, min, top) }))
+		series.map((s) => ({ ...s, paths: chartPaths(s.data, VIEW_WIDTH, height, min, top, s.slots) }))
 	);
 	// Half a unit in from each edge, or the outermost lines would be clipped.
 	const grid = $derived.by(() => {

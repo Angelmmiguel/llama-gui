@@ -9,6 +9,12 @@ describe('chartPaths', () => {
 		expect(endY).toBe(0);
 	});
 
+	it('stops a line early when it has fewer values than slots', () => {
+		const { line, area } = chartPaths([0, 100], 100, 10, 0, 100, 3);
+		expect(line).toBe('M0.0,10.0 L50.0,0.0');
+		expect(area).toBe(`${line} L50.0,10 L0,10 Z`);
+	});
+
 	it('clamps to the range and skips gaps', () => {
 		const { line } = chartPaths([-5, NaN, 500], 10, 10, 0, 100);
 		expect(line).toBe('M0.0,10.0 L10.0,0.0');
