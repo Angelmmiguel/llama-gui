@@ -425,14 +425,15 @@ func (s *Supervisor) terminate(r *run, pid int, exited <-chan error) {
 	timer := time.NewTimer(s.opts.StopTimeout)
 	defer timer.Stop()
 	select {
-	case <-exited:
+	case err := <-exited:
+		s.log.Info("llama-server stopped", "pid", pid, "result", err)
 		return
 	case <-timer.C:
 	case <-r.kill:
 	}
 	s.log.Warn("llama-server ignored SIGTERM, killing", "pid", pid)
 	_ = syscall.Kill(-pid, syscall.SIGKILL)
-	<-exited
+	s.log.Info("llama-server killed", "pid", pid, "result", <-exited)
 }
 
 func (s *Supervisor) args(port int) []string {
