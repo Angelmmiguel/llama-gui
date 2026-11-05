@@ -115,7 +115,7 @@ func entryPath(name string, tops []string) (string, error) {
 		return "", fmt.Errorf("%w: bad path %q", ErrUnsafeArchive, name)
 	}
 	if slices.Contains(strings.Split(name, "/"), "..") {
-		return "", fmt.Errorf("%w: path %q has ..", ErrUnsafeArchive, name)
+		return "", fmt.Errorf("%w: path %q climbs up a directory", ErrUnsafeArchive, name)
 	}
 	top, rest, _ := strings.Cut(path.Clean(name), "/")
 	if !slices.Contains(tops, top) {
