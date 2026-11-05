@@ -164,11 +164,23 @@ func checkValue(field, v string) error {
 // reserved reports flags the router owns or that would bypass validation.
 func reserved(key string) bool {
 	switch key {
-	case "host", "port", "reuse-port", "alias", "api-key", "api-key-file", "model", "mmproj",
-		"slot-save-path", "log-jsonl", "no-log-jsonl", "load-on-startup":
+	case "host", "port", "reuse-port", "alias", "api-key", "model", "mmproj", "log-jsonl", "no-log-jsonl",
+		"log-disable", "load-on-startup", "api-prefix", "lora", "lora-scaled", "model-draft", "model-vocoder":
 		return true
 	}
-	return strings.HasPrefix(key, "models-") || strings.HasPrefix(key, "no-models-")
+	// Anything naming a file, directory or remote source would write or read outside
+	// the models directory as the service user, for example --log-file over the database.
+	for _, suffix := range []string{"-file", "-path", "-dir", "-url"} {
+		if strings.HasSuffix(key, suffix) {
+			return true
+		}
+	}
+	for _, prefix := range []string{"models-", "no-models-", "hf-", "ssl-", "control-vector"} {
+		if strings.HasPrefix(key, prefix) {
+			return true
+		}
+	}
+	return key == "path" || key == "hf"
 }
 
 type kv struct{ key, val string }

@@ -297,3 +297,16 @@ func TestServiceSyncReportsSkipped(t *testing.T) {
 		t.Fatalf("skipped = %+v", skipped)
 	}
 }
+
+func TestReservedRejectsFileAndRemoteFlags(t *testing.T) {
+	for _, key := range []string{"log-file", "path", "lora", "chat-template-file", "model-url", "hf-repo", "hf", "media-path", "models-dir", "slot-save-path", "api-key-file", "ssl-key-file"} {
+		if !reserved(key) {
+			t.Errorf("reserved(%q) = false", key)
+		}
+	}
+	for _, key := range []string{"keep", "no-mmap", "rope-scaling", "ctx-shift"} {
+		if reserved(key) {
+			t.Errorf("reserved(%q) = true", key)
+		}
+	}
+}
