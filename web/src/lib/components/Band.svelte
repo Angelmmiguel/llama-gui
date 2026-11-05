@@ -85,6 +85,7 @@
 	/* A panel in a band is separated by the gaps, not by its own frame. */
 	.band > :global(.panel) {
 		border: none;
-		border-radius: 0;
+		/* Over the inline radius Panel always sets. */
+		border-radius: 0 !important;
 	}
 </style>
