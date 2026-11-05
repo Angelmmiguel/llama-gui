@@ -1,0 +1,173 @@
+# Continuous integration. Every job runs the same commands a developer runs
+# locally, inside the flake's shell, so CI and `just` never drift: the Go
+# toolchain, Node, pnpm and the Playwright browsers all come from flake.lock.
+# The image is published only after all suites pass on that commit.
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+# A new push to a branch makes the previous run obsolete, but a run that may
+# publish is left to finish.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      # The flake's shellHook keeps GOPATH and the build cache in .go, so a
+      # single path covers both the module cache and the compiler cache.
+      - uses: actions/cache@v4
+        with:
+          path: .go
+          key: go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('go.sum') }}-
+            go-${{ runner.os }}-${{ github.job }}-
+
+      - name: gofmt
+        run: |
+          files=$(nix develop --command gofmt -l .)
+          [ -z "$files" ] || { echo 'gofmt would rewrite:'; echo "$files"; exit 1; }
+
+      - name: Vet and lint
+        run: |
+          nix develop --command go vet ./...
+          nix develop --command golangci-lint run
+
+      # -race needs cgo; the shell's CGO_ENABLED=0 only applies to the binary.
+      - name: Test
+        run: nix develop --command bash -c 'CGO_ENABLED=1 go test -race ./...'
+
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      # pnpm resolves nothing at install time with a frozen lockfile, so the
+      # tree it produces is a pure function of the lockfile.
+      - uses: actions/cache@v4
+        with:
+          path: web/node_modules
+          key: pnpm-${{ runner.os }}-${{ hashFiles('web/pnpm-lock.yaml') }}
+
+      - name: Install
+        run: nix develop --command just web-install
+
+      - name: Type-check, lint and format
+        run: nix develop --command just web-check
+
+      - name: Test
+        run: nix develop --command just web-test
+
+  e2e:
+    name: End to end
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - uses: actions/cache@v4
+        with:
+          path: .go
+          key: go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ github.job }}-${{ hashFiles('go.sum') }}-
+            go-${{ runner.os }}-${{ github.job }}-
+
+      - uses: actions/cache@v4
+        with:
+          path: web/node_modules
+          key: pnpm-${{ runner.os }}-${{ hashFiles('web/pnpm-lock.yaml') }}
+
+      - name: Install
+        run: nix develop --command just web-install
+
+      # Builds the web app, then runs the browser specs against a throwaway
+      # server. The browsers come from the flake, so nothing is downloaded.
+      - name: Browser specs
+        run: nix develop --command just web-e2e
+
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            web/playwright-report
+            web/test-results
+          retention-days: 7
+          if-no-files-found: ignore
+
+  publish:
+    name: Publish image
+    # Only after the whole suite is green on this commit, and only for a push:
+    # a pull request must not publish.
+    needs: [backend, web, e2e]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # main publishes `latest`; a v* tag publishes the semver tags and moves
+      # `latest` to the release. The package name must be lower case, which
+      # the owner's login is not.
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/angelmmiguel/llama-gui
+          flavor: latest=false
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') }}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+
+      # linux/amd64 only, the platform Unraid runs, as `just image` builds.
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          provenance: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
