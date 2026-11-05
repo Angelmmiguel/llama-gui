@@ -47,7 +47,13 @@ type requestJSON struct {
 	Error              string  `json:"error"`
 }
 
-func queueMs(r store.Request) float64 { return max(r.TTFTMs-r.PromptMs, 0) }
+func queueMs(r store.Request) float64 {
+	if !r.Stream {
+		// A non-streamed answer has no first token to time: everything arrives at the end.
+		return max(r.TotalMs-r.PromptMs-r.PredictedMs, 0)
+	}
+	return max(r.TTFTMs-r.PromptMs, 0)
+}
 
 func toRequestJSON(r store.Request) requestJSON {
 	return requestJSON{

@@ -416,3 +416,35 @@ func TestPercentile(t *testing.T) {
 		}
 	}
 }
+
+func TestThroughputCountsRunningTasks(t *testing.T) {
+	track := &modelTrack{slots: map[int]*slotTrack{}}
+	start := time.Unix(1000, 0)
+	read := func(sec int, predicted float64, decoded int, processing bool) float64 {
+		r := reading{
+			metrics: map[string]float64{"tokens_predicted_total": predicted},
+			slots:   []llama.Slot{{ID: 0, IsProcessing: processing, NDecoded: decoded}},
+		}
+		decode, _ := track.applyMetrics(start.Add(time.Duration(sec)*time.Second), r, &Snapshot{})
+		return decode
+	}
+	read(0, 32, 0, false)
+	if got := read(1, 32, 100, true); got != 100 {
+		t.Errorf("mid-task rate = %v, want 100 although the counter did not move", got)
+	}
+	if got := read(2, 182, 0, false); got != 50 {
+		t.Errorf("rate as the task ends = %v, want 50, not a spike", got)
+	}
+	if got := read(3, 182, 0, false); got != 0 {
+		t.Errorf("idle rate = %v, want 0", got)
+	}
+	if got := read(4, 10, 0, false); got != 10 {
+		t.Errorf("rate after a counter reset = %v, want 10", got)
+	}
+	if got := read(5, 10, 50, true); got != 50 {
+		t.Fatalf("next task rate = %v, want 50", got)
+	}
+	if got := read(6, 10, 0, false); got != 0 {
+		t.Errorf("rate after a cancelled task missing from the counter = %v, want 0", got)
+	}
+}

@@ -87,9 +87,10 @@ Captured from a real `b12132` CPU build in `debian:13-slim`; the raw responses a
 
 ## Metric derivations
 
-- **Queue time** = proxy TTFT − `prompt_ms`. **Prefill** = `prompt_ms`. **Decode** = `predicted_ms`.
+- **Queue time** = proxy TTFT − `prompt_ms`; for a non-streamed answer, total − `prompt_ms` − `predicted_ms`. **Prefill** = `prompt_ms`. **Decode** = `predicted_ms`.
+- **Throughput** = delta of `tokens_predicted_total` (or `prompt_tokens_total`) plus the delta of `n_decoded` (or `n_prompt_tokens_processed`) on running slots: the counters only move when a task ends.
 - **KV tile** = sum of slot `n_prompt_tokens` over sum of `n_ctx`.
-- **Rates** come from counter deltas between samples.
+
 - **Request to slot** is best effort: when a new `id_task` appears on a model's slot, it is assigned to the
   oldest unassigned in-flight request for that model. Slot cancel closes that request's connection.
 - **TTFT** runs from the moment the body has been read to the first non-empty SSE delta, or to the first body

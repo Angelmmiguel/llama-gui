@@ -204,11 +204,12 @@ type Sampler struct {
 }
 
 type modelTrack struct {
-	counters  time.Time // when predicted and prompt were read
-	predicted float64
-	prompt    float64
-	slots     map[int]*slotTrack
-	last      []Slot
+	counters              time.Time // when predicted and prompt were read
+	predicted             float64
+	prompt                float64
+	runDecoded, runPrompt float64 // tokens of tasks still running at that reading
+	slots                 map[int]*slotTrack
+	last                  []Slot
 }
 
 type slotTrack struct {
@@ -390,6 +391,9 @@ func (s *Sampler) compute(now time.Time, modelsErr error, readings []reading) *S
 }
 
 // applyMetrics returns the decode and prefill rates since the last good reading.
+// Upstream only adds a task to its counters when the task ends, so the tokens of
+// tasks still running are added from the slots: as a task ends its tokens move from
+// one term to the other, and the sum keeps rising smoothly.
 func (t *modelTrack) applyMetrics(now time.Time, r reading, snap *Snapshot) (decode, prefill float64) {
 	if r.metricsErr != nil || r.metrics == nil {
 		return 0, 0
@@ -397,11 +401,22 @@ func (t *modelTrack) applyMetrics(now time.Time, r reading, snap *Snapshot) (dec
 	predicted, prompt := metric(r.metrics, "tokens_predicted_total"), metric(r.metrics, "prompt_tokens_total")
 	snap.Requests.Processing += int(metric(r.metrics, "requests_processing"))
 	snap.Requests.Deferred += int(metric(r.metrics, "requests_deferred"))
+	runDecoded, runPrompt := t.runDecoded, t.runPrompt
+	if r.slotsErr == nil {
+		runDecoded, runPrompt = 0, 0
+		for _, sl := range r.slots {
+			if sl.IsProcessing {
+				runDecoded += float64(sl.NDecoded)
+				runPrompt += float64(sl.NProcessed)
+			}
+		}
+	}
 	if !t.counters.IsZero() {
 		dt := now.Sub(t.counters).Seconds()
-		decode, prefill = counterRate(t.predicted, predicted, dt), counterRate(t.prompt, prompt, dt)
+		decode = tokenRate(t.predicted, predicted, t.runDecoded, runDecoded, dt)
+		prefill = tokenRate(t.prompt, prompt, t.runPrompt, runPrompt, dt)
 	}
-	t.counters, t.predicted, t.prompt = now, predicted, prompt
+	t.counters, t.predicted, t.prompt, t.runDecoded, t.runPrompt = now, predicted, prompt, runDecoded, runPrompt
 	return decode, prefill
 }
 
@@ -415,17 +430,18 @@ func metric(m map[string]float64, name string) float64 {
 	return v
 }
 
-// counterRate is the per-second increase of a counter. One that went down was
-// reset, so everything it now holds is new.
-func counterRate(prev, cur, seconds float64) float64 {
+// tokenRate is the per-second increase of a counter plus the tokens of running
+// tasks. A counter that went down was reset, so everything it now holds is new. A
+// running total can only fall short when a cancelled task never reaches the counter.
+func tokenRate(prevCounter, counter, prevRunning, running, seconds float64) float64 {
 	if seconds <= 0 {
 		return 0
 	}
-	delta := cur - prev
+	delta := counter - prevCounter
 	if delta < 0 {
-		delta = cur
+		delta = counter
 	}
-	return delta / seconds
+	return max(delta+running-prevRunning, 0) / seconds
 }
 
 func (s *Sampler) applySlots(now time.Time, model string, t *modelTrack, r reading, out *Model) {
