@@ -106,6 +106,11 @@ Captured from a real `b12132` CPU build in `debian:13-slim`; the raw responses a
 supervisor, sampler and log pipeline, serve HTTP. A build switch stops the router, restarts it from the new
 build, and reloads what was loaded. Shutdown stops accepting requests, drains, stops the router, closes the store.
 
+The router runs in its own process group on a loopback port picked per start. Stopping sends SIGTERM to the
+group, then SIGKILL; a crash also kills the group, since model children outlive the router and hold the GPU.
+Crashes restart with backoff (1 s doubling to 60 s, reset by a 60 s run) and reload what the last `/models` poll
+saw. A missing build leaves it stopped with the error, not looping; a deliberate stop forgets what was loaded.
+
 As PID 1 the binary reaps orphans and forwards SIGTERM to the router's process group.
 Reaping peeks with `waitid(WNOWAIT)` and skips children started through `reaper.Start`, so
 `exec.Cmd.Wait` keeps working; nothing in the process may spawn any other way.
