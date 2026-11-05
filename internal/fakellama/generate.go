@@ -107,7 +107,7 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request, kind str
 		s.unknownModel(w, id)
 		return
 	}
-	if err := s.ensureLoaded(r.Context(), m); err != nil {
+	if err := s.ensureLoaded(r, m); err != nil {
 		if errors.Is(err, errNotLoaded) {
 			s.notLoaded(w, m)
 		}
@@ -151,6 +151,7 @@ type gen struct {
 	s       *Server
 	m       *model
 	sl      *slot
+	task    int
 	w       http.ResponseWriter
 	r       *http.Request
 	kind    string
@@ -167,7 +168,7 @@ type gen struct {
 }
 
 func (g *gen) slotLog(level, name, text string) {
-	g.s.log.child(g.port, g.started, level, slotMsg(name, g.sl.id, g.sl.task, text))
+	g.s.log.child(g.port, g.started, level, slotMsg(name, g.sl.id, g.task, text))
 }
 
 func (g *gen) run(byLCP bool, body map[string]any) {
@@ -178,6 +179,7 @@ func (g *gen) run(byLCP bool, body map[string]any) {
 	sl.params = map[string]any{"seed": 4294967295, "temperature": 0.8, "top_k": 40, "top_p": 0.95, "min_p": 0.05,
 		"max_tokens": g.n, "n_predict": g.n, "stream": g.stream, "samplers": []string{"top_k", "top_p", "min_p", "temperature"}}
 	task := sl.task
+	g.task = task // the slot can take another task as soon as this one releases it
 	s.mu.Unlock()
 
 	sel := "selected slot by LRU, n_tokens = 0, t_last = -1"
@@ -369,7 +371,7 @@ func (s *Server) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		s.unknownModel(w, id)
 		return
 	}
-	if err := s.ensureLoaded(r.Context(), m); err != nil {
+	if err := s.ensureLoaded(r, m); err != nil {
 		if errors.Is(err, errNotLoaded) {
 			s.notLoaded(w, m)
 		}

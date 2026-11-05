@@ -1,7 +1,6 @@
 package fakellama
 
 import (
-	"context"
 	_ "embed"
 	"encoding/json"
 	"errors"
@@ -235,13 +234,19 @@ func (s *Server) unloadLocked(m *model) {
 
 var errNotLoaded = errors.New("not loaded")
 
-// ensureLoaded waits for the model to be loaded, loading it first when autoload allows.
-func (s *Server) ensureLoaded(ctx context.Context, m *model) error {
+// ensureLoaded waits for the model to be loaded, loading it first when autoload
+// allows: the router flag, unless the request has its own ?autoload=.
+func (s *Server) ensureLoaded(r *http.Request, m *model) error {
+	ctx := r.Context()
 	s.mu.Lock()
 	state := m.state
 	s.mu.Unlock()
 	if state == stateUnloaded {
-		if !s.opts.Autoload {
+		autoload := s.opts.Autoload
+		if q := r.URL.Query().Get("autoload"); q != "" {
+			autoload = q == "true"
+		}
+		if !autoload {
 			return errNotLoaded
 		}
 		s.load(m)
