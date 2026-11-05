@@ -1045,3 +1045,22 @@ func (s *safeBuffer) String() string {
 	defer s.mu.Unlock()
 	return s.b.String()
 }
+
+func TestWithAutoloadCannotBeBypassed(t *testing.T) {
+	for _, tc := range []struct {
+		query string
+		allow bool
+		want  string
+	}{
+		{"%61utoload=true", false, ""},
+		{"autoload=true&x=a;b", false, ""},
+		{"x=1&%61utoload=true", false, "x=1"},
+		{"x=1", true, "x=1&autoload=true"},
+		{"", true, "autoload=true"},
+		{"", false, ""},
+	} {
+		if got := withAutoload(tc.query, tc.allow); got != tc.want {
+			t.Errorf("withAutoload(%q, %v) = %q, want %q", tc.query, tc.allow, got, tc.want)
+		}
+	}
+}

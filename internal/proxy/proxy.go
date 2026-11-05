@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	defaultMaxBody    = 512 << 20
+	defaultMaxBody    = 64 << 20
 	defaultMaxCapture = 1 << 20
 	retryAfterSeconds = "5"
 	statusCancelled   = 499 // no status exists when the request ends before upstream answers
@@ -188,11 +188,15 @@ func (p *Proxy) rewrite(pr *httputil.ProxyRequest) {
 // withAutoload makes the proxy's decision the only one upstream sees: a client's own
 // autoload=true must not get around a profile that forbids on-demand loading.
 func withAutoload(rawQuery string, allow bool) string {
-	if strings.Contains(rawQuery, "autoload") {
-		if q, err := url.ParseQuery(rawQuery); err == nil {
-			q.Del("autoload")
-			rawQuery = q.Encode()
+	if rawQuery != "" {
+		// Always parsed, because upstream percent-decodes keys: %61utoload is autoload too.
+		// A query that does not parse is dropped rather than forwarded for upstream to read.
+		q, err := url.ParseQuery(rawQuery)
+		if err != nil {
+			q = url.Values{}
 		}
+		q.Del("autoload")
+		rawQuery = q.Encode()
 	}
 	if !allow {
 		return rawQuery
