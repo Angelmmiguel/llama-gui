@@ -588,3 +588,85 @@ func TestPruneCrossesBatches(t *testing.T) {
 		t.Errorf("pruned %d", n)
 	}
 }
+
+func TestInsertLogLinesSetsIDs(t *testing.T) {
+	s := open(t)
+	lines := []LogLine{{TS: t0, Raw: "a"}, {TS: t0, Raw: "b"}}
+	if err := s.InsertLogLines(ctx, lines); err != nil {
+		t.Fatal(err)
+	}
+	if lines[0].ID == 0 || lines[1].ID != lines[0].ID+1 {
+		t.Errorf("%+v", lines)
+	}
+}
+
+func TestLogLinesModelUntilAndAfter(t *testing.T) {
+	s := open(t)
+	if err := s.InsertLogLines(ctx, []LogLine{
+		{TS: t0, Model: "a", Raw: "1"},
+		{TS: t0.Add(time.Second), Model: "b", Raw: "2"},
+		{TS: t0.Add(2 * time.Second), Model: "a", Raw: "3"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _, err := s.ListLogLines(ctx, LogFilter{Model: "b"}); err != nil || len(got) != 1 || got[0].Raw != "2" {
+		t.Errorf("model: %+v %v", got, err)
+	}
+	if got, _, err := s.ListLogLines(ctx, LogFilter{Until: t0.Add(time.Second)}); err != nil || len(got) != 1 || got[0].Raw != "1" {
+		t.Errorf("until: %+v %v", got, err)
+	}
+	got, err := s.LogLinesAfter(ctx, LogFilter{Limit: 2}, 0)
+	if err != nil || len(got) != 2 || got[0].Raw != "1" || got[1].Raw != "2" {
+		t.Fatalf("first page: %+v %v", got, err)
+	}
+	got, err = s.LogLinesAfter(ctx, LogFilter{Limit: 2, Model: "a"}, got[1].ID)
+	if err != nil || len(got) != 1 || got[0].Raw != "3" {
+		t.Errorf("second page: %+v %v", got, err)
+	}
+}
+
+func TestLogVolumeAndCounts(t *testing.T) {
+	s := open(t)
+	base := t0.Truncate(time.Minute)
+	if err := s.InsertLogLines(ctx, []LogLine{
+		{TS: base.Add(-time.Hour), Level: "error", Raw: "old"},
+		{TS: base, Level: "info", Raw: "1"},
+		{TS: base.Add(10 * time.Second), Level: "info", Raw: "2"},
+		{TS: base.Add(20 * time.Second), Level: "error", Raw: "3"},
+		{TS: base.Add(time.Minute), Level: "warn", Raw: "4"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	vol, err := s.LogVolume(ctx, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(vol) != 3 || !vol[0].Minute.Equal(base) || vol[0].Level != "error" || vol[0].Count != 1 ||
+		vol[1].Level != "info" || vol[1].Count != 2 || !vol[2].Minute.Equal(base.Add(time.Minute)) {
+		t.Errorf("%+v", vol)
+	}
+	counts, err := s.CountLogLevels(ctx, base)
+	if err != nil || counts["info"] != 2 || counts["error"] != 1 || counts["warn"] != 1 {
+		t.Errorf("%v %v", counts, err)
+	}
+}
+
+func TestRequestStatusClassFilterAndSummary(t *testing.T) {
+	s := open(t)
+	for i, status := range []int{200, 503, 201} {
+		if _, err := s.InsertRequest(ctx, Request{StartedAt: t0.Add(time.Duration(i) * time.Second), Model: "m", Status: status, Gaps: json.RawMessage(`[1]`)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, _, err := s.ListRequests(ctx, RequestFilter{StatusClass: 5})
+	if err != nil || len(got) != 1 || got[0].Status != 503 {
+		t.Errorf("%+v %v", got, err)
+	}
+	sum, err := s.RequestsForSummary(ctx, RequestFilter{StatusClass: 2}, 10)
+	if err != nil || len(sum) != 2 || sum[0].Status != 201 || sum[0].Gaps != nil {
+		t.Errorf("%+v %v", sum, err)
+	}
+	if sum, _ := s.RequestsForSummary(ctx, RequestFilter{}, 1); len(sum) != 1 {
+		t.Errorf("bound: %d", len(sum))
+	}
+}

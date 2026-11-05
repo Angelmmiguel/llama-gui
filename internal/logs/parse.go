@@ -1,5 +1,6 @@
 // Package logs turns llama-server output into structured lines and derived events.
-// It is pure parsing: no I/O, and no input makes it panic.
+// Parsing is pure: no I/O, and no input makes it panic. Pipeline carries the
+// result to the store and the live tail.
 package logs
 
 import (

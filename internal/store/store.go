@@ -374,6 +374,8 @@ type RequestFilter struct {
 	// Endpoint is the exact value of the request's Endpoint field.
 	Endpoint string
 	Model    string
+	// StatusClass is the status's hundreds digit: 2 for any 2xx.
+	StatusClass int
 	// Limit defaults to 100 and is capped at 1000.
 	Limit int
 	// Cursor is the next-page value from the previous call.
@@ -383,22 +385,7 @@ type RequestFilter struct {
 // ListRequests returns matching requests, newest first, and a cursor for the
 // next page, empty on the last one.
 func (s *Store) ListRequests(ctx context.Context, f RequestFilter) ([]Request, string, error) {
-	var (
-		where []string
-		args  []any
-	)
-	if !f.Since.IsZero() {
-		where, args = append(where, `started_at >= ?`), append(args, f.Since.UnixMicro())
-	}
-	if !f.Until.IsZero() {
-		where, args = append(where, `started_at < ?`), append(args, f.Until.UnixMicro())
-	}
-	if f.Endpoint != "" {
-		where, args = append(where, `endpoint = ?`), append(args, f.Endpoint)
-	}
-	if f.Model != "" {
-		where, args = append(where, `model = ?`), append(args, f.Model)
-	}
+	where, args := requestWhere(f)
 	if f.Cursor != "" {
 		startedAt, id, err := decodeCursor(f.Cursor)
 		if err != nil {
@@ -433,6 +420,50 @@ func (s *Store) ListRequests(ctx context.Context, f RequestFilter) ([]Request, s
 	return out, encodeCursor(last.StartedAt.UnixMicro(), last.ID), nil
 }
 
+func requestWhere(f RequestFilter) (where []string, args []any) {
+	if !f.Since.IsZero() {
+		where, args = append(where, `started_at >= ?`), append(args, f.Since.UnixMicro())
+	}
+	if !f.Until.IsZero() {
+		where, args = append(where, `started_at < ?`), append(args, f.Until.UnixMicro())
+	}
+	if f.Endpoint != "" {
+		where, args = append(where, `endpoint = ?`), append(args, f.Endpoint)
+	}
+	if f.Model != "" {
+		where, args = append(where, `model = ?`), append(args, f.Model)
+	}
+	if f.StatusClass != 0 {
+		where, args = append(where, `status_class = ?`), append(args, f.StatusClass)
+	}
+	return where, args
+}
+
+// RequestsForSummary returns up to max matching requests without their gaps,
+// newest first, for aggregating in Go. Limit and Cursor are ignored.
+func (s *Store) RequestsForSummary(ctx context.Context, f RequestFilter, maxRows int) ([]Request, error) {
+	where, args := requestWhere(f)
+	columns := strings.Replace(requestColumns, "gaps", "NULL", 1)
+	rows, err := s.read.QueryContext(ctx, `SELECT `+columns+` FROM requests`+whereClause(where)+
+		` ORDER BY started_at DESC, id DESC LIMIT ?`, append(args, maxRows)...)
+	if err != nil {
+		return nil, fmt.Errorf("store: summarise requests: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []Request
+	for rows.Next() {
+		r, err := scanRequest(rows)
+		if err != nil {
+			return nil, fmt.Errorf("store: summarise requests: %w", err)
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: summarise requests: %w", err)
+	}
+	return out, nil
+}
+
 // LogLine is one line of router output. Raw is always kept, so a line that
 // could not be parsed still has its text.
 type LogLine struct {
@@ -445,7 +476,8 @@ type LogLine struct {
 	Raw     string
 }
 
-// InsertLogLines stores a batch in one transaction, in order.
+// InsertLogLines stores a batch in one transaction, in order, and sets each
+// line's ID.
 func (s *Store) InsertLogLines(ctx context.Context, lines []LogLine) error {
 	if len(lines) == 0 {
 		return nil
@@ -461,13 +493,21 @@ func (s *Store) InsertLogLines(ctx context.Context, lines []LogLine) error {
 		return fmt.Errorf("store: insert log lines: %w", err)
 	}
 	defer func() { _ = stmt.Close() }()
-	for _, l := range lines {
-		if _, err := stmt.ExecContext(ctx, l.TS.UnixMicro(), l.Level, l.Source, l.Model, l.Message, l.Raw); err != nil {
+	ids := make([]int64, len(lines))
+	for i, l := range lines {
+		res, err := stmt.ExecContext(ctx, l.TS.UnixMicro(), l.Level, l.Source, l.Model, l.Message, l.Raw)
+		if err != nil {
+			return fmt.Errorf("store: insert log lines: %w", err)
+		}
+		if ids[i], err = res.LastInsertId(); err != nil {
 			return fmt.Errorf("store: insert log lines: %w", err)
 		}
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("store: insert log lines: %w", err)
+	}
+	for i := range lines {
+		lines[i].ID = ids[i]
 	}
 	return nil
 }
@@ -475,8 +515,10 @@ func (s *Store) InsertLogLines(ctx context.Context, lines []LogLine) error {
 // LogFilter narrows ListLogLines. Zero fields do not filter.
 type LogFilter struct {
 	Since  time.Time // inclusive
+	Until  time.Time // exclusive
 	Level  string
 	Source string
+	Model  string
 	// Query is a case-insensitive (ASCII) substring of the message or raw line.
 	Query string
 	// Limit defaults to 100 and is capped at 1000.
@@ -488,24 +530,7 @@ type LogFilter struct {
 // ListLogLines returns matching lines, newest first, and a cursor for the next
 // page, empty on the last one.
 func (s *Store) ListLogLines(ctx context.Context, f LogFilter) ([]LogLine, string, error) {
-	var (
-		where []string
-		args  []any
-	)
-	if !f.Since.IsZero() {
-		where, args = append(where, `ts >= ?`), append(args, f.Since.UnixMicro())
-	}
-	if f.Level != "" {
-		where, args = append(where, `level = ?`), append(args, f.Level)
-	}
-	if f.Source != "" {
-		where, args = append(where, `source = ?`), append(args, f.Source)
-	}
-	if f.Query != "" {
-		pattern := "%" + likeEscaper.Replace(f.Query) + "%"
-		where = append(where, `(message LIKE ? ESCAPE '\' OR raw LIKE ? ESCAPE '\')`)
-		args = append(args, pattern, pattern)
-	}
+	where, args := logWhere(f)
 	if f.Cursor != "" {
 		_, id, err := decodeCursor(f.Cursor)
 		if err != nil {
@@ -514,10 +539,54 @@ func (s *Store) ListLogLines(ctx context.Context, f LogFilter) ([]LogLine, strin
 		where, args = append(where, `id < ?`), append(args, id)
 	}
 	limit := pageSize(f.Limit)
-	rows, err := s.read.QueryContext(ctx, `SELECT id, ts, level, source, model, message, raw FROM log_lines`+
-		whereClause(where)+` ORDER BY id DESC LIMIT ?`, append(args, limit+1)...)
+	out, err := s.queryLogLines(ctx, whereClause(where)+` ORDER BY id DESC LIMIT ?`, append(args, limit+1))
 	if err != nil {
-		return nil, "", fmt.Errorf("store: list log lines: %w", err)
+		return nil, "", err
+	}
+	if len(out) <= limit {
+		return out, "", nil
+	}
+	out = out[:limit]
+	return out, encodeCursor(0, out[limit-1].ID), nil
+}
+
+// LogLinesAfter returns matching lines with an id above afterID, oldest first,
+// for walking the whole log forwards. Limit is as in ListLogLines; Cursor is
+// ignored.
+func (s *Store) LogLinesAfter(ctx context.Context, f LogFilter, afterID int64) ([]LogLine, error) {
+	where, args := logWhere(f)
+	where, args = append(where, `id > ?`), append(args, afterID)
+	return s.queryLogLines(ctx, whereClause(where)+` ORDER BY id LIMIT ?`, append(args, pageSize(f.Limit)))
+}
+
+func logWhere(f LogFilter) (where []string, args []any) {
+	if !f.Since.IsZero() {
+		where, args = append(where, `ts >= ?`), append(args, f.Since.UnixMicro())
+	}
+	if !f.Until.IsZero() {
+		where, args = append(where, `ts < ?`), append(args, f.Until.UnixMicro())
+	}
+	if f.Level != "" {
+		where, args = append(where, `level = ?`), append(args, f.Level)
+	}
+	if f.Source != "" {
+		where, args = append(where, `source = ?`), append(args, f.Source)
+	}
+	if f.Model != "" {
+		where, args = append(where, `model = ?`), append(args, f.Model)
+	}
+	if f.Query != "" {
+		pattern := "%" + likeEscaper.Replace(f.Query) + "%"
+		where = append(where, `(message LIKE ? ESCAPE '\' OR raw LIKE ? ESCAPE '\')`)
+		args = append(args, pattern, pattern)
+	}
+	return where, args
+}
+
+func (s *Store) queryLogLines(ctx context.Context, tail string, args []any) ([]LogLine, error) {
+	rows, err := s.read.QueryContext(ctx, `SELECT id, ts, level, source, model, message, raw FROM log_lines`+tail, args...)
+	if err != nil {
+		return nil, fmt.Errorf("store: list log lines: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -526,19 +595,68 @@ func (s *Store) ListLogLines(ctx context.Context, f LogFilter) ([]LogLine, strin
 		var l LogLine
 		var ts int64
 		if err := rows.Scan(&l.ID, &ts, &l.Level, &l.Source, &l.Model, &l.Message, &l.Raw); err != nil {
-			return nil, "", fmt.Errorf("store: list log lines: %w", err)
+			return nil, fmt.Errorf("store: list log lines: %w", err)
 		}
 		l.TS = time.UnixMicro(ts).UTC()
 		out = append(out, l)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, "", fmt.Errorf("store: list log lines: %w", err)
+		return nil, fmt.Errorf("store: list log lines: %w", err)
 	}
-	if len(out) <= limit {
-		return out, "", nil
+	return out, nil
+}
+
+// LogVolumeBucket counts one level's lines in one minute.
+type LogVolumeBucket struct {
+	Minute time.Time
+	Level  string
+	Count  int64
+}
+
+// LogVolume counts lines per minute and level since the given time, oldest first.
+func (s *Store) LogVolume(ctx context.Context, since time.Time) ([]LogVolumeBucket, error) {
+	rows, err := s.read.QueryContext(ctx, `SELECT ts / 60000000 AS minute, level, COUNT(*) FROM log_lines
+		WHERE ts >= ? GROUP BY minute, level ORDER BY minute, level`, since.UnixMicro())
+	if err != nil {
+		return nil, fmt.Errorf("store: log volume: %w", err)
 	}
-	out = out[:limit]
-	return out, encodeCursor(0, out[limit-1].ID), nil
+	defer func() { _ = rows.Close() }()
+	out := []LogVolumeBucket{}
+	for rows.Next() {
+		var b LogVolumeBucket
+		var minute int64
+		if err := rows.Scan(&minute, &b.Level, &b.Count); err != nil {
+			return nil, fmt.Errorf("store: log volume: %w", err)
+		}
+		b.Minute = time.Unix(minute*60, 0).UTC()
+		out = append(out, b)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: log volume: %w", err)
+	}
+	return out, nil
+}
+
+// CountLogLevels counts lines per level since the given time.
+func (s *Store) CountLogLevels(ctx context.Context, since time.Time) (map[string]int64, error) {
+	rows, err := s.read.QueryContext(ctx, `SELECT level, COUNT(*) FROM log_lines WHERE ts >= ? GROUP BY level`, since.UnixMicro())
+	if err != nil {
+		return nil, fmt.Errorf("store: count log levels: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[string]int64{}
+	for rows.Next() {
+		var level string
+		var n int64
+		if err := rows.Scan(&level, &n); err != nil {
+			return nil, fmt.Errorf("store: count log levels: %w", err)
+		}
+		out[level] = n
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: count log levels: %w", err)
+	}
+	return out, nil
 }
 
 // Event is something derived from the logs or the supervisor, for the timeline.
