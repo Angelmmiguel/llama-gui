@@ -32,13 +32,15 @@ func TestListLogs(t *testing.T) {
 		query string
 		want  int
 	}{
-		"all":    {"", 5},
-		"level":  {"?level=warn", 1},
-		"source": {"?source=slot", 1},
-		"model":  {"?model=a", 1},
-		"query":  {"?q=ALPHA", 1},
-		"since":  {"?since=" + testNow.Add(-90*time.Second).Format(time.RFC3339), 3},
-		"limit":  {"?limit=2", 2},
+		"all":     {"", 5},
+		"level":   {"?level=warn", 1},
+		"levels":  {"?level=warn,error", 3},
+		"sources": {"?source=slot,srv", 5},
+		"source":  {"?source=slot", 1},
+		"model":   {"?model=a", 1},
+		"query":   {"?q=ALPHA", 1},
+		"since":   {"?since=" + testNow.Add(-90*time.Second).Format(time.RFC3339), 3},
+		"limit":   {"?limit=2", 2},
 	} {
 		t.Run(name, func(t *testing.T) {
 			code, body := h.sendJSON(t, http.MethodGet, "/api/v1/logs"+tc.query, "")
@@ -151,7 +153,7 @@ func TestLogStreamBacklogLiveAndFilter(t *testing.T) {
 	srv := httptest.NewServer(h.handler)
 	defer srv.Close()
 
-	resp, err := http.Get(srv.URL + "/api/v1/logs/stream?level=info&backlog=5")
+	resp, err := http.Get(srv.URL + "/api/v1/logs/stream?level=info,error&backlog=5")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +175,7 @@ func TestLogStreamBacklogLiveAndFilter(t *testing.T) {
 	if got[2].event != "event" || !strings.Contains(got[2].data, `"kind":"x"`) {
 		t.Errorf("event: %+v", got[2])
 	}
-	if h.tail.filter.Level != "info" || h.tail.filter.Limit != 5 {
+	if h.tail.filter.Level != "info,error" || h.tail.filter.Limit != 5 {
 		t.Errorf("filter %+v", h.tail.filter)
 	}
 

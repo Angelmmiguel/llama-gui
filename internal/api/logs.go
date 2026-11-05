@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -73,9 +74,14 @@ func (a *api) listLogs(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, http.StatusOK, map[string]any{"lines": out, "next_cursor": next})
 }
 
+// anyOf says whether a comma-separated filter admits v; empty admits everything.
+func anyOf(list, v string) bool {
+	return list == "" || slices.Contains(strings.Split(list, ","), v)
+}
+
 // matches applies a log filter to a live line the way the store does.
 func matches(f store.LogFilter, l *store.LogLine) bool {
-	if (f.Level != "" && l.Level != f.Level) || (f.Source != "" && l.Source != f.Source) || (f.Model != "" && l.Model != f.Model) {
+	if !anyOf(f.Level, l.Level) || !anyOf(f.Source, l.Source) || (f.Model != "" && l.Model != f.Model) {
 		return false
 	}
 	if f.Query == "" {

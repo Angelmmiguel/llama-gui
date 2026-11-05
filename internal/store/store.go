@@ -371,7 +371,7 @@ func (s *Store) GetRequest(ctx context.Context, id int64) (Request, error) {
 type RequestFilter struct {
 	Since time.Time // inclusive
 	Until time.Time // exclusive
-	// Endpoint is the exact value of the request's Endpoint field.
+	// Endpoint is the exact value of the request's Endpoint field, or several separated by commas.
 	Endpoint string
 	Model    string
 	// StatusClass is the status's hundreds digit: 2 for any 2xx.
@@ -420,6 +420,19 @@ func (s *Store) ListRequests(ctx context.Context, f RequestFilter) ([]Request, s
 	return out, encodeCursor(last.StartedAt.UnixMicro(), last.ID), nil
 }
 
+// appendAnyOf narrows column to the comma-separated values in list. Column is a
+// literal from this package.
+func appendAnyOf(where []string, args []any, column, list string) ([]string, []any) {
+	if list == "" {
+		return where, args
+	}
+	values := strings.Split(list, ",")
+	for _, v := range values {
+		args = append(args, v)
+	}
+	return append(where, column+` IN (?`+strings.Repeat(`,?`, len(values)-1)+`)`), args
+}
+
 func requestWhere(f RequestFilter) (where []string, args []any) {
 	if !f.Since.IsZero() {
 		where, args = append(where, `started_at >= ?`), append(args, f.Since.UnixMicro())
@@ -427,9 +440,7 @@ func requestWhere(f RequestFilter) (where []string, args []any) {
 	if !f.Until.IsZero() {
 		where, args = append(where, `started_at < ?`), append(args, f.Until.UnixMicro())
 	}
-	if f.Endpoint != "" {
-		where, args = append(where, `endpoint = ?`), append(args, f.Endpoint)
-	}
+	where, args = appendAnyOf(where, args, "endpoint", f.Endpoint)
 	if f.Model != "" {
 		where, args = append(where, `model = ?`), append(args, f.Model)
 	}
@@ -514,8 +525,9 @@ func (s *Store) InsertLogLines(ctx context.Context, lines []LogLine) error {
 
 // LogFilter narrows ListLogLines. Zero fields do not filter.
 type LogFilter struct {
-	Since  time.Time // inclusive
-	Until  time.Time // exclusive
+	Since time.Time // inclusive
+	Until time.Time // exclusive
+	// Level and Source take one value, or several separated by commas.
 	Level  string
 	Source string
 	Model  string
@@ -566,12 +578,8 @@ func logWhere(f LogFilter) (where []string, args []any) {
 	if !f.Until.IsZero() {
 		where, args = append(where, `ts < ?`), append(args, f.Until.UnixMicro())
 	}
-	if f.Level != "" {
-		where, args = append(where, `level = ?`), append(args, f.Level)
-	}
-	if f.Source != "" {
-		where, args = append(where, `source = ?`), append(args, f.Source)
-	}
+	where, args = appendAnyOf(where, args, "level", f.Level)
+	where, args = appendAnyOf(where, args, "source", f.Source)
 	if f.Model != "" {
 		where, args = append(where, `model = ?`), append(args, f.Model)
 	}

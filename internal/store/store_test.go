@@ -600,6 +600,23 @@ func TestInsertLogLinesSetsIDs(t *testing.T) {
 	}
 }
 
+func TestFiltersTakeSeveralValues(t *testing.T) {
+	s := open(t)
+	if err := s.InsertLogLines(ctx, []LogLine{
+		{TS: t0, Level: "info", Source: "slot", Raw: "1"},
+		{TS: t0, Level: "warn", Source: "srv", Raw: "2"},
+		{TS: t0, Level: "error", Source: "router", Raw: "3"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _, err := s.ListLogLines(ctx, LogFilter{Level: "warn,error"}); err != nil || len(got) != 2 {
+		t.Errorf("levels: %+v %v", got, err)
+	}
+	if got, _, err := s.ListLogLines(ctx, LogFilter{Level: "warn,error", Source: "slot,router"}); err != nil || len(got) != 1 || got[0].Raw != "3" {
+		t.Errorf("levels and sources: %+v %v", got, err)
+	}
+}
+
 func TestLogLinesModelUntilAndAfter(t *testing.T) {
 	s := open(t)
 	if err := s.InsertLogLines(ctx, []LogLine{

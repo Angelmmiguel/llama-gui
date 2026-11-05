@@ -42,13 +42,14 @@ func TestListRequestsFiltersAndCursor(t *testing.T) {
 		query string
 		want  int
 	}{
-		"all":      {"", 4},
-		"model":    {"?model=b", 1},
-		"endpoint": {"?endpoint=/v1/chat/completions", 2},
-		"status":   {"?status=4xx", 1},
-		"class":    {"?status=2", 2},
-		"since":    {"?since=" + since, 3},
-		"until":    {"?until=" + since, 1},
+		"all":       {"", 4},
+		"model":     {"?model=b", 1},
+		"endpoint":  {"?endpoint=/v1/chat/completions", 2},
+		"endpoints": {"?endpoint=/v1/chat/completions,/v1/completions", 4},
+		"status":    {"?status=4xx", 1},
+		"class":     {"?status=2", 2},
+		"since":     {"?since=" + since, 3},
+		"until":     {"?until=" + since, 1},
 	} {
 		t.Run(name, func(t *testing.T) {
 			code, body := h.sendJSON(t, http.MethodGet, "/api/v1/requests"+tc.query, "")

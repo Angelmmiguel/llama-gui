@@ -144,10 +144,10 @@ JSON under `/api/v1`; errors are `{"error": "message"}` with a matching status.
 | `GET /profiles/{id}/command` | `{command}`, the equivalent command line |
 | `GET /models` · `POST /models/{id}/load` · `POST /models/{id}/unload` | `{models}`, empty while the router is down; 202 |
 | `GET /slots` · `POST /slots/{model}/{slot}/{action}` | `{models, in_flight, time}`; action is save or restore with `{filename}`, erase or cancel. A filename is a single path element |
-| `GET /requests?since=&until=&model=&endpoint=&status=&limit=&cursor=&format=csv` | `{requests, next_cursor}`, or CSV. `status` is a class such as `2xx` |
+| `GET /requests?since=&until=&model=&endpoint=&status=&limit=&cursor=&format=csv` | `{requests, next_cursor}`, or CSV. `status` is a class such as `2xx`; `endpoint` takes a comma-separated list |
 | `GET /requests/summary` | Same filters, default last hour: `kpis`, `ttft` and `total` percentiles, `statuses`, per-model `models` medians, `scatter` (newest 500), `truncated` |
 | `GET /requests/{id}` | The request plus `gaps`, and `body` `{request, response}` or null |
-| `GET /logs?since=&until=&level=&source=&model=&q=&limit=&cursor=` | `{lines, next_cursor}`, newest first |
+| `GET /logs?since=&until=&level=&source=&model=&q=&limit=&cursor=` | `{lines, next_cursor}`, newest first; `level` and `source` take comma-separated lists |
 | `GET /logs/stream?level=&source=&model=&q=&backlog=` | SSE: backlog then live, `event: log` and `event: event` |
 | `GET /logs/volume` | `{minutes, today}`: 60 per-minute counts by level, and warnings and errors since local midnight |
 | `GET /logs/download` | Same filters as `/logs`, as text, oldest first |
