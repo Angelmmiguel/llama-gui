@@ -101,28 +101,28 @@ Order keeps a usable product at each step: M3 is already a working managed llama
 
 ### M0 · Scaffolding
 
-- [ ] `go.mod` (Go 1.26), `cmd/llama-gui`, `internal/`
+- [x] `go.mod` (Go 1.26), `cmd/llama-gui`, `internal/`
 - [x] `flake.nix` dev shell, including Chromium to try the app
-- [ ] SvelteKit + Svelte 5 + adapter-static in `web/` with `paths.base = /ui`, pnpm, Vitest,
+- [x] SvelteKit + Svelte 5 + adapter-static in `web/` with `paths.base = /ui`, pnpm, Vitest,
       Playwright (`@playwright/test` pinned to the flake's `playwright-driver`), ESLint, Prettier
-- [ ] `web/embed.go`: serve the build with SPA fallback, cache rules and CSP header, as in mailarchive
-- [ ] `.envrc`, `justfile`, `.golangci.yml`, `.dockerignore`, `.gitignore` additions
-- [ ] `CLAUDE.md` with the conventions, `docs/ARCHITECTURE.md`
-- [ ] CI: Go race tests, web checks, e2e; publish the image once suites pass
+- [x] `web/embed.go`: serve the build with SPA fallback, cache rules and CSP header, as in mailarchive
+- [x] `.envrc`, `justfile`, `.golangci.yml`, `.dockerignore`, `.gitignore` additions
+- [x] `CLAUDE.md` with the conventions, `docs/ARCHITECTURE.md`
+- [x] CI: Go race tests, web checks, e2e; publish the image once suites pass
 
 ### M1 · Core service and image
 
-- [ ] Config: flags and env with the precedence in the README, validation with clear errors
-- [ ] CLI skeleton: `serve`, `version`, `healthcheck`; other commands call the local API
-- [ ] HTTP server, graceful shutdown, slog
-- [ ] SQLite: open with WAL, embedded migrations, pruning by `LLAMA_GUI_RETENTION`
-- [ ] Route split: `/ui/*`, `/api/*`, everything else proxied; browser `GET /` redirects to `/ui/`
-- [ ] Multi-stage `Dockerfile`: web, static Go, `debian:13-slim` with runtime libraries, tools,
+- [x] Config: flags and env with the precedence in the README, validation with clear errors
+- [x] CLI skeleton: `serve`, `version`, `healthcheck`; other commands call the local API
+- [x] HTTP server, graceful shutdown, slog
+- [x] SQLite: open with WAL, embedded migrations, pruning by `LLAMA_GUI_RETENTION`
+- [x] Route split: `/ui/*`, `/api/*`, everything else proxied; browser `GET /` redirects to `/ui/`
+- [x] Multi-stage `Dockerfile`: web, static Go, `debian:13-slim` with runtime libraries, tools,
       `USER 99:100`, `HEALTHCHECK`, volumes `/data`, `/builds`, `/models`
-- [ ] **Spike:** run CPU, CUDA and Vulkan prebuilts in the image on real hardware; check what ROCm,
-      SYCL and OpenVINO need from the host or image; measure the image with and without
-      `mesa-vulkan-drivers` for AMD and Intel
-- [ ] PID 1 duties: reap zombies, forward signals, stop within Docker's timeout
+- [x] **Spike:** CPU prebuilt confirmed in `debian:13-slim` with a real model
+- [ ] **To test by hand on a GPU machine:** CUDA and Vulkan prebuilts in the image; what ROCm, SYCL and
+      OpenVINO need from the host or image; `mesa-vulkan-drivers` for AMD and Intel. Assumed to work for now
+- [x] PID 1 duties: reap zombies, forward signals, stop within Docker's timeout
 
 ### M2 · Hardware and builds backend
 
