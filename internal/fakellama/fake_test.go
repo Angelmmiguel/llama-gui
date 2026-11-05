@@ -401,3 +401,41 @@ func TestReloadRereadsThePreset(t *testing.T) {
 		t.Errorf("after reload: %s", got)
 	}
 }
+
+func TestSlotsHonourParallel(t *testing.T) {
+	_, c, _ := newServer(t, func(o *Options) {
+		if err := os.WriteFile(o.Preset, []byte("[four]\nctx-size = 8000\nparallel = 4\nmodel = /m/a.gguf\n\n[plain]\nctx-size = 8000\nmodel = /m/b.gguf\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	})
+	ctx := context.Background()
+	for id, want := range map[string]struct{ slots, nCtx int }{"four": {4, 2000}, "plain": {2, 4000}} {
+		if err := c.Load(ctx, id); err != nil {
+			t.Fatal(err)
+		}
+		waitStatus(t, c, id, "loaded")
+		slots, err := c.Slots(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(slots) != want.slots || slots[0].NCtx != want.nCtx {
+			t.Errorf("%s: %d slots of %d, want %+v", id, len(slots), slots[0].NCtx, want)
+		}
+	}
+}
+
+func TestModelsSpreadOverGPUs(t *testing.T) {
+	_, c, _ := newServer(t, func(o *Options) { o.GPUs = 2 })
+	ctx := context.Background()
+	got := map[string]bool{}
+	for _, id := range []string{"smolvlm", "other"} {
+		if err := c.Load(ctx, id); err != nil {
+			t.Fatal(err)
+		}
+		m := waitStatus(t, c, id, "loaded")
+		got[m.Memory.Effective.Devices[0].Name] = true
+	}
+	if !got["CUDA0"] || !got["CUDA1"] {
+		t.Errorf("devices: %v", got)
+	}
+}

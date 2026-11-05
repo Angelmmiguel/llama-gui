@@ -27,9 +27,9 @@ const (
 	stateLoading  = "loading"
 	stateLoaded   = "loaded"
 
-	binary    = "/llama/llama-server"
-	nSlots    = 2
-	baseModel = 173263104
+	binary       = "/llama/llama-server"
+	defaultSlots = 2
+	baseModel    = 173263104
 )
 
 type slot struct {
@@ -57,6 +57,7 @@ type model struct {
 	ready    chan struct{}
 	slots    []*slot
 	ctx      int
+	gpu      int // where it landed, with FAKE_LLAMA_GPUS
 	counters counters
 }
 
@@ -89,15 +90,20 @@ func New(opts Options, logOut io.Writer) (*Server, error) {
 	return s, nil
 }
 
-func presetCtx(p presetModel) int {
+func presetCtx(p presetModel) int { return presetInt(p, "ctx-size", 4096) }
+
+// slotCount is the preset's parallel, as a real child would split its context.
+func (m *model) slotCount() int { return presetInt(m.presetModel, "parallel", defaultSlots) }
+
+func presetInt(p presetModel, key string, def int) int {
 	for _, e := range p.kvs {
-		if e.key == "ctx-size" {
+		if e.key == key {
 			if n, err := strconv.Atoi(e.val); err == nil && n > 0 {
 				return n
 			}
 		}
 	}
-	return 4096
+	return def
 }
 
 // Banner logs the startup lines a router prints before serving.
@@ -209,14 +215,16 @@ func (s *Server) load(m *model) {
 			s.mu.Unlock()
 			return
 		}
+		m.gpu = s.emptiestGPU()
 		m.state, m.started, m.counters = stateLoaded, started, counters{}
 		m.slots = nil
-		for i := 0; i < nSlots; i++ {
-			m.slots = append(m.slots, &slot{id: i, nCtx: m.ctx / nSlots})
+		n := m.slotCount()
+		for i := range n {
+			m.slots = append(m.slots, &slot{id: i, nCtx: m.ctx / n})
 		}
 		close(m.ready)
 		s.mu.Unlock()
-		l.child(port, started, "info", srvMsg("load_model", fmt.Sprintf("initializing, n_slots = %d, n_ctx_slot = %d, kv_unified = 'false'", nSlots, m.ctx/nSlots)))
+		l.child(port, started, "info", srvMsg("load_model", fmt.Sprintf("initializing, n_slots = %d, n_ctx_slot = %d, kv_unified = 'false'", n, m.ctx/n)))
 		l.child(port, started, "info", srvMsg("server_run_i", "model loaded"))
 		l.child(port, started, "info", srvMsg("server_on_li", fmt.Sprintf("listening on http://%s:%d", s.opts.Host, port)))
 	}()
@@ -298,18 +306,29 @@ func modelBytes(m *model) int64 {
 	return baseModel
 }
 
-// devices places a model on the host or, with FAKE_LLAMA_GPUS, on the emulated GPU
-// its name hashes to, as a real router reports it.
+// emptiestGPU picks where the next model goes, so a demo's models spread over its GPUs
+// as they would on real ones rather than piling up past what one can hold.
+func (s *Server) emptiestGPU() int {
+	if s.opts.GPUs == 0 {
+		return 0
+	}
+	used := make([]int64, s.opts.GPUs)
+	for _, m := range s.models {
+		if m.state == stateLoaded {
+			used[m.gpu] += modelBytes(m)
+		}
+	}
+	return slices.Index(used, slices.Min(used))
+}
+
+// devices places a model on the host or, with FAKE_LLAMA_GPUS, on an emulated GPU,
+// as a real router reports it.
 func (s *Server) devices(m *model, compute int64) []any {
 	model, ctx := modelBytes(m), int64(m.ctx)*23040
 	if s.opts.GPUs == 0 {
 		return []any{hostDevice(model, ctx, compute)}
 	}
-	var sum int
-	for _, c := range m.id {
-		sum += int(c)
-	}
-	return []any{map[string]any{"kind": "device", "name": fmt.Sprintf("CUDA%d", sum%s.opts.GPUs), "total": int64(24) << 30,
+	return []any{map[string]any{"kind": "device", "name": fmt.Sprintf("CUDA%d", m.gpu), "total": int64(24) << 30,
 		"free": int64(24)<<30 - model, "model": model, "context": ctx, "compute": compute}}
 }
 
@@ -328,7 +347,7 @@ func (s *Server) modelJSON(m *model) map[string]any {
 		"memory": map[string]any{"status": "measured", "min": est, "max": est, "effective": effective},
 	}
 	if m.state == stateLoaded {
-		out["meta"] = map[string]any{"n_ctx": m.ctx / nSlots, "n_ctx_train": 8192, "size": baseModel}
+		out["meta"] = map[string]any{"n_ctx": m.ctx / m.slotCount(), "n_ctx_train": 8192, "size": baseModel}
 	}
 	return out
 }
@@ -573,7 +592,7 @@ func (s *Server) handleProps(w http.ResponseWriter, r *http.Request) {
 	}
 	var props map[string]any
 	_ = json.Unmarshal(propsJSON, &props)
-	props["model_alias"], props["total_slots"] = m.id, nSlots
+	props["model_alias"], props["total_slots"] = m.id, m.slotCount()
 	writeJSON(w, 200, props)
 }
 
