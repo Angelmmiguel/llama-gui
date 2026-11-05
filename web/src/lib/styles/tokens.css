@@ -1,0 +1,167 @@
+/* Primitives: every raw value in the design. Components use the semantic layer below. */
+:root {
+	--gray-00: #08090b;
+	--gray-01: #0a0b0d;
+	--gray-02: #0c0e11;
+	--gray-03: #0f1114;
+	--gray-04: #121418;
+	--gray-05: #16191d;
+	--gray-06: #181b20;
+	--gray-07: #1a1d22;
+	--gray-08: #1b1e23;
+	--gray-09: #1d2026;
+	--gray-10: #1f2329;
+	--gray-11: #22262c;
+	--gray-12: #23272e;
+	--gray-13: #2a2e35;
+	--gray-14: #2c3139;
+	--gray-15: #343941;
+	--gray-16: #3a3f48;
+	--gray-17: #3a404a;
+	--gray-18: #4e5662;
+	--gray-19: #5f6772;
+	--gray-20: #6b7380;
+	--gray-21: #7c8491;
+	--gray-22: #8d95a1;
+	--gray-23: #a9b0bb;
+	--gray-24: #aeb6c2;
+	--gray-25: #b4bbc5;
+	--gray-26: #c2c8d0;
+	--gray-27: #c9ced6;
+	--gray-28: #e8eaed;
+	--white: #ffffff;
+
+	--amber-400: #f0b35a;
+	--sky-400: #6cc4f2;
+	--violet-400: #9d8cf0;
+	--mint-400: #5ee0b5;
+	--mint-300: #8fd6a8;
+	--mint-900: #23493d;
+	--peach-300: #ffb38a;
+	--red-400: #ff6b6b;
+	--red-300: #ff9f96;
+	--red-900: #4a2a2a;
+}
+
+/* Semantic layer. */
+:root {
+	color-scheme: dark;
+
+	/* Surfaces */
+	--bg-ground: var(--gray-01);
+	--bg-panel: var(--gray-03);
+	--bg-inset: var(--gray-02);
+	--bg-deep: var(--gray-00);
+	--bg-control: var(--gray-04);
+	--bg-selected: var(--gray-07);
+	--bg-segment-on: var(--gray-12);
+
+	/* Borders */
+	--border-panel: var(--gray-09);
+	--border-control: var(--gray-12);
+	--border-ghost: var(--gray-14);
+	--border-row: var(--gray-06);
+	--border-raised: var(--gray-17);
+	--border-free: var(--gray-15);
+	--border-ok: var(--mint-900);
+	--border-danger: var(--red-900);
+
+	/* Tracks and charts */
+	--track: var(--gray-05);
+	--track-idle: var(--gray-08);
+	--track-tick: var(--gray-10);
+	--chart-grid: var(--gray-07);
+	--chart-grid-soft: var(--gray-06);
+	--chart-axis: var(--gray-13);
+	--chart-now: var(--gray-16);
+	--queued-a: var(--gray-16);
+	--queued-b: var(--gray-11);
+
+	/* Text */
+	--fg-bright: var(--white);
+	--fg-primary: var(--gray-28);
+	--fg-secondary: var(--gray-27);
+	--fg-tertiary: var(--gray-23);
+	--fg-muted: var(--gray-22);
+	--fg-faint: var(--gray-21);
+	--fg-off: var(--gray-20);
+	--fg-timestamp: var(--gray-19);
+	--fg-gutter: var(--gray-18);
+	--fg-log: var(--gray-25);
+	--fg-log-line: var(--gray-26);
+	--fg-on-accent: var(--gray-01);
+
+	/* Data colors */
+	--color-decode: var(--amber-400);
+	--color-prefill: var(--sky-400);
+	--color-cached: var(--violet-400);
+	--color-ok: var(--mint-400);
+	--color-warn: var(--peach-300);
+	--color-error: var(--red-400);
+	--color-error-soft: var(--red-300);
+	--color-weights: var(--gray-24);
+	--color-compute: var(--gray-18);
+	--color-other: var(--gray-17);
+	--color-off: var(--gray-20);
+	--color-idle: var(--gray-22);
+	--color-source-ggml: var(--mint-300);
+
+	/* Tints */
+	--tint-warn: rgba(255, 179, 138, 0.06);
+	--tint-error: rgba(255, 107, 107, 0.08);
+	--halo-selected: rgba(255, 255, 255, 0.15);
+	--pulse-from: rgba(94, 224, 181, 0.55);
+	--pulse-to: rgba(94, 224, 181, 0);
+	--flow-light: rgba(255, 255, 255, 0.28);
+	--flow-dark: rgba(0, 0, 0, 0.25);
+
+	/* Fonts */
+	--font-sans: 'Geist Sans', system-ui, sans-serif;
+	--font-mono: 'Geist Mono', monospace;
+
+	/* Type scale */
+	--fs-10: 10px;
+	--fs-11: 11px;
+	--fs-11-5: 11.5px;
+	--fs-12: 12px;
+	--fs-13: 13px;
+	--fs-14: 14px;
+	--fs-15: 15px;
+	--fs-16: 16px;
+	--fs-18: 18px;
+	--fs-20: 20px;
+	--fs-22: 22px;
+	--fs-24: 24px;
+	--fs-28: 28px;
+	--fs-40: 40px;
+	--fs-56: 56px;
+	--tracking-caps: 0.1em;
+	--tracking-column: 0.06em;
+
+	/* Spacing */
+	--space-2: 2px;
+	--space-4: 4px;
+	--space-6: 6px;
+	--space-8: 8px;
+	--space-10: 10px;
+	--space-12: 12px;
+	--space-14: 14px;
+	--space-16: 16px;
+	--space-18: 18px;
+	--space-20: 20px;
+	--space-22: 22px;
+	--space-24: 24px;
+	--space-28: 28px;
+	--space-48: 48px;
+
+	/* Radii */
+	--radius-1: 2px;
+	--radius-2: 3px;
+	--radius-3: 4px;
+	--radius-4: 6px;
+	--radius-5: 8px;
+	--radius-6: 10px;
+	--radius-7: 12px;
+	--radius-pill: 16px;
+	--radius-round: 50%;
+}

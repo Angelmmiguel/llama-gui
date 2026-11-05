@@ -11,6 +11,8 @@ const target = `http://${addr.startsWith(':') ? `127.0.0.1${addr}` : addr}`;
 // make SvelteKit ignore that file.
 export default defineConfig({
 	plugins: [sveltekit()],
+	// Small font subsets would otherwise become data: URLs, which font-src 'self' refuses.
+	build: { assetsInlineLimit: 0 },
 	server: {
 		// The browser only ever talks to Vite, one origin as in production.
 		proxy: { '/api': { target, ws: true } }
