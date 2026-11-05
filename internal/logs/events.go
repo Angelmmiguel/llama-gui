@@ -4,6 +4,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // Event kinds.
@@ -33,8 +34,13 @@ type Event struct {
 	Meta     map[string]string
 }
 
-// Detector derives events from lines. It holds no state, so it is safe for concurrent use.
-type Detector struct{}
+// Detector derives events from lines. It remembers which instances were spawned to
+// serve, because the router also starts short-lived ones to measure memory, whose
+// clean exit means nothing. Safe for concurrent use.
+type Detector struct {
+	mu      sync.Mutex
+	serving map[string]bool
+}
 
 var (
 	spawnRe  = regexp.MustCompile(`spawning server instance with name=(\S+) on port (\d+)`)
@@ -43,7 +49,7 @@ var (
 )
 
 // Observe returns the events a line implies; unknown lines yield none.
-func (Detector) Observe(l Line) []Event {
+func (d *Detector) Observe(l Line) []Event {
 	m := l.Message
 	lower := strings.ToLower(m)
 	switch {
@@ -54,10 +60,23 @@ func (Detector) Observe(l Line) []Event {
 		return []Event{{Kind: EventRouterListening, Severity: SeverityInfo, Title: "Router listening on " + addr, Meta: map[string]string{"addr": addr}}}
 	}
 	if sm := spawnRe.FindStringSubmatch(m); sm != nil {
+		d.mu.Lock()
+		if d.serving == nil {
+			d.serving = map[string]bool{}
+		}
+		d.serving[sm[1]] = true
+		d.mu.Unlock()
 		return []Event{{Kind: EventModelLoading, Severity: SeverityInfo, Title: "Loading " + sm[1], Meta: map[string]string{"model": sm[1], "port": sm[2]}}}
 	}
 	if em := exitRe.FindStringSubmatch(m); em != nil {
-		sev, title := SeverityInfo, em[1]+" exited"
+		d.mu.Lock()
+		serving := d.serving[em[1]]
+		delete(d.serving, em[1])
+		d.mu.Unlock()
+		if em[2] == "0" && !serving {
+			return nil
+		}
+		sev, title := SeverityInfo, "Unloaded "+em[1]
 		if em[2] != "0" {
 			sev, title = SeverityError, em[1]+" exited with status "+em[2]
 		}

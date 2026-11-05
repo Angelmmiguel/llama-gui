@@ -104,7 +104,7 @@ func TestParseRouterLogFile(t *testing.T) {
 
 func TestDetector(t *testing.T) {
 	p := Parser{}
-	obs := func(raw string) []Event { return Detector{}.Observe(p.Parse(raw, t0, model)) }
+	obs := func(raw string) []Event { return (&Detector{}).Observe(p.Parse(raw, t0, model)) }
 	if e := obs(`{"type":"log","time":1,"level":"info","msg":"srv           run: instance name=a exited with status 1\n"}`); len(e) != 1 || e[0].Severity != "error" || e[0].Meta["status"] != "1" {
 		t.Errorf("%+v", e)
 	}
@@ -143,7 +143,7 @@ func FuzzParse(f *testing.F) {
 	}
 	f.Fuzz(func(t *testing.T, s string) {
 		l := Parser{}.Parse(s, t0, model)
-		Detector{}.Observe(l)
+		(&Detector{}).Observe(l)
 		if l.Raw != s {
 			t.Fatal("raw altered")
 		}
