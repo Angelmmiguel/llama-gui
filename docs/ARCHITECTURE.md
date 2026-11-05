@@ -8,7 +8,7 @@ entrypoint: it serves the dashboard, a management API, and a measured reverse pr
 
 | Path | Handler |
 | --- | --- |
-| `/ui/*` | Embedded SPA (`web`), with `/ui` stripped before the embed handler |
+| `/ui/*` | Embedded SPA (`web`), with `/ui` stripped before the embed handler; `/ui` redirects to `/ui/` |
 | `/api/v1/*` | Management API (`internal/api`) |
 | `GET /` with `Accept: text/html` | Redirect to `/ui/` |
 | everything else | Reverse proxy to the router (`internal/proxy`) |
@@ -18,13 +18,15 @@ dashboard has its own prefix. Upstream has no `/api` routes.
 
 ## Packages
 
-Dependencies only point downward. Nothing imports `internal/app` except `cmd/llama-gui`.
+Dependencies only point downward. Nothing imports `internal/app` except `cmd/llama-gui`;
+its `reaper` subpackage has no dependencies and is for anything that spawns a process.
 
 | Package | Owns |
 | --- | --- |
 | `cmd/llama-gui` | Subcommands; the non-`serve` ones are thin clients of the local API |
 | `cmd/fake-llama-server` | Test double replaying `internal/llama/testdata`, used instead of a real build |
 | `internal/app` | Composition root: builds every component, wires them, runs and stops them |
+| `internal/app/reaper` | PID 1 orphan reaping, and the `Start`/`Wait` every spawned process must use so it is not stolen |
 | `internal/api` | `/api/v1` JSON handlers and the SSE stream |
 | `internal/proxy` | Reverse proxy, per-request measurement, optional body capture |
 | `internal/telemetry` | 1 s sampler, ring buffers, publish/subscribe hub |
@@ -105,6 +107,8 @@ supervisor, sampler and log pipeline, serve HTTP. A build switch stops the route
 build, and reloads what was loaded. Shutdown stops accepting requests, drains, stops the router, closes the store.
 
 As PID 1 the binary reaps orphans and forwards SIGTERM to the router's process group.
+Reaping peeks with `waitid(WNOWAIT)` and skips children started through `reaper.Start`, so
+`exec.Cmd.Wait` keeps working; nothing in the process may spawn any other way.
 
 ## API
 
