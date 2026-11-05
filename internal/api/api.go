@@ -162,6 +162,13 @@ func Handler(deps Deps) http.Handler {
 		"DELETE /builds/jobs/{id}":   a.cancelJob,
 		"POST /builds/{id}/activate": a.activateBuild,
 		"DELETE /builds/{id}":        a.removeBuild,
+
+		"GET /profiles":              a.listProfiles,
+		"POST /profiles":             a.createProfile,
+		"GET /profiles/{id}":         a.getProfile,
+		"PUT /profiles/{id}":         a.updateProfile,
+		"DELETE /profiles/{id}":      a.deleteProfile,
+		"GET /profiles/{id}/command": a.profileCommand,
 	} {
 		method, path, _ := strings.Cut(pattern, " ")
 		mux.HandleFunc(method+" /api/v1"+path, h)
