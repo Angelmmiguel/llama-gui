@@ -246,7 +246,7 @@ func newHarness(t *testing.T) *harness {
 
 func (h *harness) deps() Deps {
 	return Deps{
-		Version: "v1", Capture: "bodies",
+		Version: "v1", Capture: "bodies", LogVerbosity: 3,
 		Started:   testNow.Add(-90 * time.Second),
 		Now:       func() time.Time { return testNow },
 		Logger:    discardLogger(),

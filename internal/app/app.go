@@ -161,18 +161,19 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, ln net.Listen
 	ctrl.applyActive(ctx)
 
 	handler := routes(api.Handler(api.Deps{
-		Version:   cfg.Version,
-		Capture:   cfg.Capture,
-		Started:   time.Now(),
-		Now:       time.Now,
-		Logger:    log,
-		Server:    ctrl,
-		Builds:    liveB,
-		Releases:  rel,
-		Profiles:  liveProfiles{Service: svc, c: ctrl},
-		Store:     st,
-		Telemetry: sampler,
-		Tail:      pipe,
+		Version:      cfg.Version,
+		Capture:      cfg.Capture,
+		LogVerbosity: cfg.LogVerbosity,
+		Started:      time.Now(),
+		Now:          time.Now,
+		Logger:       log,
+		Server:       ctrl,
+		Builds:       liveB,
+		Releases:     rel,
+		Profiles:     liveProfiles{Service: svc, c: ctrl},
+		Store:        st,
+		Telemetry:    sampler,
+		Tail:         pipe,
 		Router: func() (api.Router, bool) {
 			c, ok := clients.get()
 			if !ok {

@@ -20,7 +20,7 @@ func TestStatus(t *testing.T) {
 		t.Fatalf("code %d", code)
 	}
 	active, _ := body["active_build"].(map[string]any)
-	if body["state"] != "running" || body["version"] != "v1" || body["capture"] != "bodies" || body["uptime_seconds"] != 90.0 ||
+	if body["state"] != "running" || body["version"] != "v1" || body["capture"] != "bodies" || body["log_verbosity"] != 3.0 || body["uptime_seconds"] != 90.0 ||
 		body["models_loaded"] != 1.0 || body["update_available"] != true || active["id"] != "b1-cpu" || active["tag"] != "b1" || active["backend"] != "cpu" {
 		t.Errorf("body %v", body)
 	}

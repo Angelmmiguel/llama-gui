@@ -24,6 +24,8 @@ type statusResponse struct {
 	Version       string `json:"version"`
 	UptimeSeconds int64  `json:"uptime_seconds"`
 	Capture       string `json:"capture"`
+	// LogVerbosity is the -lv level the router runs with.
+	LogVerbosity int `json:"log_verbosity"`
 	// RouterSince is when the router entered its current state.
 	RouterSince     time.Time         `json:"router_since"`
 	PID             int               `json:"pid,omitempty"`
@@ -42,6 +44,7 @@ func (a *api) status(w http.ResponseWriter, r *http.Request) {
 		Version:       a.Version,
 		UptimeSeconds: int64(a.Now().Sub(a.Started).Seconds()),
 		Capture:       a.Capture,
+		LogVerbosity:  a.LogVerbosity,
 		RouterSince:   st.Since,
 		PID:           st.PID,
 		RestartCount:  st.RestartCount,

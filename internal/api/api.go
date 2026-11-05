@@ -109,9 +109,11 @@ type Deps struct {
 	Version string
 	// Capture is the capture mode: meta or bodies.
 	Capture string
-	Started time.Time
-	Now     func() time.Time
-	Logger  *slog.Logger
+	// LogVerbosity is the -lv level the router runs with.
+	LogVerbosity int
+	Started      time.Time
+	Now          func() time.Time
+	Logger       *slog.Logger
 
 	Server    Server
 	Builds    Builds
