@@ -32,6 +32,7 @@
 		tensorSplitLabel,
 		waterfallRows
 	} from '$lib/monitor/overview';
+	import GettingStarted from '$lib/monitor/GettingStarted.svelte';
 	import { errorText, every } from '$lib/monitor/poll';
 	import ProfileSummary from '$lib/monitor/ProfileSummary.svelte';
 	import RouterModels from '$lib/monitor/RouterModels.svelte';
@@ -77,6 +78,8 @@
 	});
 
 	const snap = $derived(telemetry.latest);
+	// With nothing to run yet, an empty dashboard would only get in the way of what to do.
+	const noBuild = $derived(server.status !== null && !server.status.active_build);
 	const routerState = $derived(snap?.server.state ?? server.state);
 	const routerUp = $derived(routerState === 'running');
 
@@ -220,7 +223,11 @@
 	{#snippet actions()}<LiveToggle bind:live={telemetry.live} />{/snippet}
 </PageHeader>
 
-{#if !snap}
+<GettingStarted />
+
+{#if noBuild}
+	<!-- GettingStarted says it all. -->
+{:else if !snap}
 	<Panel>
 		<EmptyState
 			title={telemetry.connected ? 'Waiting for the first sample' : 'Connecting to telemetry'}

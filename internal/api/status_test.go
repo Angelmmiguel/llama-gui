@@ -34,6 +34,16 @@ func TestStatusWithoutABuild(t *testing.T) {
 	}
 }
 
+func TestHardwareListsAreNeverNull(t *testing.T) {
+	h := newHarness(t)
+	_, body := h.sendJSON(t, http.MethodGet, "/api/v1/hardware", "")
+	for _, key := range []string{"gpus", "render_nodes"} {
+		if list, ok := body[key].([]any); !ok || len(list) != 0 {
+			t.Errorf("%s: %v", key, body[key])
+		}
+	}
+}
+
 func TestHardware(t *testing.T) {
 	h := newHarness(t)
 	code, body := h.sendJSON(t, http.MethodGet, "/api/v1/hardware", "")

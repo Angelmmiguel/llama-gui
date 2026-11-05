@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Angelmmiguel/llama-gui/internal/builds"
+	"github.com/Angelmmiguel/llama-gui/internal/hardware"
 	"github.com/Angelmmiguel/llama-gui/internal/supervisor"
 )
 
@@ -66,7 +67,15 @@ func (a *api) status(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *api) hardware(w http.ResponseWriter, r *http.Request) {
-	WriteJSON(w, http.StatusOK, a.Hardware(r.Context()))
+	snap := a.Hardware(r.Context())
+	// A machine without a GPU has an empty list, not a missing one.
+	if snap.GPUs == nil {
+		snap.GPUs = []hardware.GPU{}
+	}
+	if snap.RenderNodes == nil {
+		snap.RenderNodes = []hardware.RenderNode{}
+	}
+	WriteJSON(w, http.StatusOK, snap)
 }
 
 func (a *api) serverStart(w http.ResponseWriter, r *http.Request) {

@@ -1,7 +1,9 @@
 <script lang="ts">
 	import '$lib/styles/global.css';
 	import type { Snippet } from 'svelte';
+	import { page } from '$app/state';
 	import Nav from '$lib/components/Nav.svelte';
+	import GettingStarted from '$lib/monitor/GettingStarted.svelte';
 	import { server } from '$lib/state/server.svelte';
 
 	let { children }: { children: Snippet } = $props();
@@ -12,6 +14,10 @@
 <div class="app">
 	<Nav serverState={server.state} uptimeSeconds={server.uptimeSeconds} />
 	<main>
+		<!-- The Overview shows it whole, and Builds is where the install itself is. -->
+		{#if page.route.id !== '/' && page.route.id !== '/builds'}
+			<GettingStarted compact />
+		{/if}
 		{@render children()}
 	</main>
 </div>
