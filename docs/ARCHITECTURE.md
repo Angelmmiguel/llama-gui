@@ -92,6 +92,12 @@ Captured from a real `b12132` CPU build in `debian:13-slim`; the raw responses a
 - **Rates** come from counter deltas between samples.
 - **Request to slot** is best effort: when a new `id_task` appears on a model's slot, it is assigned to the
   oldest unassigned in-flight request for that model. Slot cancel closes that request's connection.
+- **TTFT** runs from the moment the body has been read to the first non-empty SSE delta, or to the first body
+  byte when not streaming. `requests.error` holds the classification (`400 ctx`, `503 busy`, `200 cancelled`);
+  a plain success leaves it empty, and a request that ended before upstream answered has status 499.
+
+The proxy decides on-demand loading per request: the router runs with `--no-models-autoload`, the proxy adds
+`autoload=true` when the profile allows it, and removes any `autoload` the client sent.
 
 ## Storage
 
