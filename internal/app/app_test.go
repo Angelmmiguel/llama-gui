@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -19,12 +20,19 @@ import (
 
 func testConfig(t *testing.T) config.Config {
 	t.Helper()
+	dir := t.TempDir()
 	return config.Config{
-		Addr:      "127.0.0.1:0",
-		Data:      filepath.Join(t.TempDir(), "nested", "data"),
-		Capture:   "meta",
-		Retention: time.Hour,
-		Version:   "test",
+		Addr:         "127.0.0.1:0",
+		Data:         filepath.Join(dir, "nested", "data"),
+		Builds:       filepath.Join(dir, "builds"),
+		Models:       filepath.Join(dir, "models"),
+		LlamaVersion: "none",
+		LlamaBackend: "auto",
+		LlamaUpdates: "off",
+		ModelsMax:    4,
+		Capture:      "meta",
+		Retention:    time.Hour,
+		Version:      "test",
 	}
 }
 
@@ -70,11 +78,17 @@ func TestRunServesAndStops(t *testing.T) {
 		t.Errorf("status: %d %v", code, body)
 	}
 	for _, path := range []string{"/slots", "/metrics"} {
-		if code, body := get(t, base+path); code != 503 || body["error"] != "llama-server is not running" {
+		code, body := get(t, base+path)
+		e, _ := body["error"].(map[string]any)
+		if code != 503 || e["message"] != "llama-server is not running" {
 			t.Errorf("%s: %d %v", path, code, body)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(cfg.Data, dbFile)); err != nil {
+	waitFor(t, "the missing build to show", func() bool {
+		_, body := get(t, base+"/api/v1/status")
+		return strings.Contains(fmt.Sprint(body["last_error"]), "no llama-server build")
+	})
+	if _, err := os.Stat(filepath.Join(cfg.Data, DBFile)); err != nil {
 		t.Errorf("database: %v", err)
 	}
 
@@ -244,5 +258,16 @@ func TestPruneLoop(t *testing.T) {
 func TestIsLoopbackRejectsOtherAddresses(t *testing.T) {
 	if isLoopback(&net.UnixAddr{Name: "x"}) {
 		t.Error("a non-TCP address is not known to be loopback")
+	}
+}
+
+func waitFor(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }

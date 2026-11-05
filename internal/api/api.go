@@ -128,9 +128,6 @@ type Deps struct {
 	Updates    func(ctx context.Context) builds.UpdateInfo
 	// Done closes as shutdown begins, ending the streams so they don't hold up the drain.
 	Done <-chan struct{}
-
-	// State reports the router's state.
-	State func() string
 }
 
 type api struct {
@@ -153,6 +150,8 @@ func Handler(deps Deps) http.Handler {
 	for pattern, h := range map[string]http.HandlerFunc{
 		"GET /healthz": healthz,
 		"GET /status":  a.status,
+
+		"GET /hardware": a.hardware,
 
 		"GET /builds":                a.listBuilds,
 		"GET /builds/available":      a.availableBuilds,
@@ -189,6 +188,10 @@ func Handler(deps Deps) http.Handler {
 
 		"GET /telemetry":        a.telemetry,
 		"GET /telemetry/stream": a.streamTelemetry,
+
+		"POST /server/start":   a.serverStart,
+		"POST /server/stop":    a.serverStop,
+		"POST /server/restart": a.serverRestart,
 	} {
 		method, path, _ := strings.Cut(pattern, " ")
 		mux.HandleFunc(method+" /api/v1"+path, h)

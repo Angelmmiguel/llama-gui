@@ -1,7 +1,6 @@
 package app
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -84,17 +83,5 @@ func TestRedirects(t *testing.T) {
 		if *hit != "" {
 			t.Errorf("%s reached %s", tc.target, *hit)
 		}
-	}
-}
-
-func TestProxyStub(t *testing.T) {
-	w := httptest.NewRecorder()
-	proxyStub().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/slots", nil))
-	var body map[string]string
-	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
-		t.Fatal(err)
-	}
-	if w.Code != http.StatusServiceUnavailable || body["error"] != "llama-server is not running" {
-		t.Errorf("%d %v", w.Code, body)
 	}
 }

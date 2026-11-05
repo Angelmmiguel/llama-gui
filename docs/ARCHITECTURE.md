@@ -35,7 +35,7 @@ its `reaper` subpackage has no dependencies and is for anything that spawns a pr
 | `internal/builds` | Installed builds on `/builds`: install, probe, activate, remove, retention |
 | `internal/releases` | GitHub client: channels, tag classification, assets, compare |
 | `internal/hardware` | GPU, CPU, RAM and disk detection |
-| `internal/logs` | Parsing router output into structured lines and events |
+| `internal/logs` | Parsing router output into structured lines and events, and the pipeline storing them |
 | `internal/llama` | Typed, tolerant HTTP client for the router's API |
 | `internal/store` | SQLite: migrations, retention, every query |
 | `internal/config` | Flags and env |
@@ -131,18 +131,51 @@ JSON under `/api/v1`; errors are `{"error": "message"}` with a matching status.
 
 | Route | Purpose |
 | --- | --- |
-| `GET /status` | Server state, uptime, version, active build, capture mode |
+| `GET /status` | `state`, `version`, `uptime_seconds`, `capture`, `router_since`, `pid`, `restart_count`, `last_error`, `active_build` `{id, tag, backend}` or null, `models_loaded`, `update_available`, `update` `{available, latest, stable, nightly, checked_at, error}` |
 | `GET /hardware` | Detected GPUs, CPU, RAM, disks |
-| `GET /builds` · `GET /builds/available?channel=` | Installed and released versions |
-| `POST /builds/install` `{version, backend}` · `GET /builds/jobs` | Install, with progress |
-| `POST /builds/{id}/activate` · `DELETE /builds/{id}` | Switch, remove |
-| `GET,POST /profiles` · `GET,PUT,DELETE /profiles/{id}` | Profiles |
-| `GET /models` · `POST /models/{id}/load` · `POST /models/{id}/unload` | Router models |
-| `GET /slots` · `POST /slots/{model}/{slot}/{action}` | Slots; action is save, restore, erase or cancel |
-| `GET /requests` · `GET /requests/{id}` · `GET /requests/summary` | History with filters |
-| `GET /logs` · `GET /logs/stream` · `GET /events` | Logs and derived events |
+| `GET /builds` | `{builds, active}`; each is a manifest plus `active` and `supported` |
+| `GET /builds/available?channel=&limit=&version=` | `{releases}`, newest first. `options` is only on each channel's newest and on an exact `version`, as it costs a download per stable release |
+| `GET /builds/compare?from=&to=` | `{ahead_by, commits}` between two tags |
+| `POST /builds/install` `{version, backend}` | 202 with the job; 200 if already installed. `backend` defaults to `auto` |
+| `GET /builds/jobs` · `DELETE /builds/jobs/{id}` | `{jobs}` with progress; cancel |
+| `POST /builds/{id}/activate` · `DELETE /builds/{id}` | Switch, answering 202 while the router restarts; remove |
+| `GET,POST /profiles` · `GET,PUT,DELETE /profiles/{id}` | `{profiles, skipped}`; bad input is a 400 with the message, a duplicate alias a 409. Changes reach a running router through `/models?reload=1` |
+| `GET /profiles/{id}/command` | `{command}`, the equivalent command line |
+| `GET /models` · `POST /models/{id}/load` · `POST /models/{id}/unload` | `{models}`, empty while the router is down; 202 |
+| `GET /slots` · `POST /slots/{model}/{slot}/{action}` | `{models, in_flight, time}`; action is save or restore with `{filename}`, erase or cancel. A filename is a single path element |
+| `GET /requests?since=&until=&model=&endpoint=&status=&limit=&cursor=&format=csv` | `{requests, next_cursor}`, or CSV. `status` is a class such as `2xx` |
+| `GET /requests/summary` | Same filters, default last hour: `kpis`, `ttft` and `total` percentiles, `statuses`, per-model `models` medians, `scatter`, `truncated` |
+| `GET /requests/{id}` | The request plus `gaps`, and `body` `{request, response}` or null |
+| `GET /logs?since=&until=&level=&source=&model=&q=&limit=&cursor=` | `{lines, next_cursor}`, newest first |
+| `GET /logs/stream?level=&source=&model=&q=&backlog=` | SSE: backlog then live, `event: log` and `event: event` |
+| `GET /logs/volume` | `{minutes, today}`: 60 per-minute counts by level, and warnings and errors since local midnight |
+| `GET /logs/download` | Same filters as `/logs`, as text, oldest first |
+| `GET /events?since=` | `{events}`, newest first |
 | `GET /telemetry` · `GET /telemetry/stream` | Current snapshot, and SSE at 1 Hz |
-| `POST /server/{start,stop,restart}` | Router control |
+| `POST /server/{start,stop,restart}` | Router control. Start and restart answer 202 while it happens, or 409 with no build |
 | `GET /healthz` | Liveness, used by `llama-gui healthcheck` |
 
-`web/src/lib/api` mirrors these routes one to one.
+`web/src/lib/api` mirrors these routes one to one. State-changing requests whose `Sec-Fetch-Site` is present and
+neither `same-origin` nor `none` get a 403: there is no authentication, so other sites must not be able to drive
+the API through a visitor's browser.
+
+A telemetry snapshot has `time`, `server` `{state, error}`, `models[]` `{id, status, memory, slots, error}`,
+`throughput` `{decode, prefill}`, `requests` `{in_flight, processing, deferred, per_minute, ttft_p50_ms, ttft_p95_ms}`,
+`kv` `{used, total}`, `gpus`, `ram`, `in_flight`, `series` `{decode, prefill, spark: {prefill, ttft, rpm, kv}}` (60 s and
+30 s, oldest first) and `slot_history[]` `{model, slot, samples: [{state, speed}]}` (90 s). A slot is `{id, state, cached,
+prompt, generated, total, n_ctx, task, speed, params}`, with state `idle`, `prefill` or `decode`.
+
+## Telemetry and logs
+
+The sampler ticks at 1 Hz whether or not anyone is watching, polling `/slots` and `/metrics` only for loaded models. A
+failure is per model: that model keeps its last slots and carries an `error`. Requests per minute and TTFT percentiles
+come from the proxy's measurements as they finish, in memory, over 60 s and 5 min; history comes from SQLite.
+
+Router output goes parser, bounded queue, batched `log_lines` writes (500 ms or 200 lines, dropping with a warning when
+full), then the live tail. A batch's insert and publish share a lock with a tail's backlog query, so a line reaches a
+reader exactly once. A line's model comes from the port in the last spawn line and then the sampler's `/models`. Lines
+are stored as they are, but never copied into our own logs, since a high `-lv` can include prompts. Events come from
+`logs.Detector`, the supervisor's state changes and installs.
+
+Updates are checked at start and every 6 h: `notify` reports them in `/status`, comparing `b*` numbers with the active
+build's channel, and `auto` also installs a newer stable onto a stable build and switches once nothing is in flight.

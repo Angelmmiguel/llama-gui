@@ -3,8 +3,6 @@ package app
 import (
 	"net/http"
 	"strings"
-
-	"github.com/Angelmmiguel/llama-gui/internal/api"
 )
 
 // routes is the one place requests are split between the dashboard, the API and
@@ -36,11 +34,4 @@ func routes(apiHandler, ui, proxy http.Handler) http.Handler {
 
 func acceptsHTML(r *http.Request) bool {
 	return strings.Contains(strings.ToLower(strings.Join(r.Header.Values("Accept"), ",")), "text/html")
-}
-
-// proxyStub stands in for the reverse proxy until the supervisor exists.
-func proxyStub() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		api.WriteError(w, http.StatusServiceUnavailable, "llama-server is not running")
-	})
 }
