@@ -256,17 +256,21 @@ type modelTimes struct {
 	QueueMs   float64 `json:"queue_ms"`
 	PrefillMs float64 `json:"prefill_ms"`
 	DecodeMs  float64 `json:"decode_ms"`
+	TotalMs   float64 `json:"total_ms"`
 }
 
 type scatterPoint struct {
-	ID         int64     `json:"id"`
-	StartedAt  time.Time `json:"started_at"`
-	Model      string    `json:"model"`
-	Status     int       `json:"status"`
-	PromptN    int       `json:"prompt_n"`
-	PredictedN int       `json:"predicted_n"`
-	TTFTMs     float64   `json:"ttft_ms"`
-	TotalMs    float64   `json:"total_ms"`
+	ID          int64     `json:"id"`
+	StartedAt   time.Time `json:"started_at"`
+	Model       string    `json:"model"`
+	Status      int       `json:"status"`
+	PromptN     int       `json:"prompt_n"`
+	CacheN      int       `json:"cache_n"`
+	PredictedN  int       `json:"predicted_n"`
+	PredictedMs float64   `json:"predicted_ms"`
+	TTFTMs      float64   `json:"ttft_ms"`
+	TotalMs     float64   `json:"total_ms"`
+	Stream      bool      `json:"stream"`
 }
 
 type requestSummaryJSON struct {
@@ -315,7 +319,7 @@ func statusLabel(r store.Request) string {
 
 // summarise aggregates rows, which are newest first.
 func summarise(rows []store.Request, since, until time.Time) requestSummaryJSON {
-	type series struct{ queue, prefill, decode []float64 }
+	type series struct{ queue, prefill, decode, total []float64 }
 	out := requestSummaryJSON{Since: since, Until: until, Statuses: []statusCount{}, Models: []modelTimes{}, Scatter: []scatterPoint{}}
 	var ttft, total, speed []float64
 	statuses := map[string]int{}
@@ -342,6 +346,9 @@ func summarise(rows []store.Request, since, until time.Time) requestSummaryJSON 
 			byModel[r.Model] = s
 		}
 		counts[r.Model]++
+		if r.TotalMs > 0 {
+			s.total = append(s.total, r.TotalMs)
+		}
 		if r.TTFTMs > 0 {
 			ttft = append(ttft, r.TTFTMs)
 			s.queue = append(s.queue, queueMs(r))
@@ -355,7 +362,8 @@ func summarise(rows []store.Request, since, until time.Time) requestSummaryJSON 
 		if len(out.Scatter) < maxScatterPoints {
 			out.Scatter = append(out.Scatter, scatterPoint{
 				ID: r.ID, StartedAt: r.StartedAt, Model: r.Model, Status: r.Status,
-				PromptN: r.PromptN, PredictedN: r.PredictedN, TTFTMs: r.TTFTMs, TotalMs: r.TotalMs,
+				PromptN: r.PromptN, CacheN: r.CacheN, PredictedN: r.PredictedN, PredictedMs: r.PredictedMs,
+				TTFTMs: r.TTFTMs, TotalMs: r.TotalMs, Stream: r.Stream,
 			})
 		}
 	}
@@ -370,7 +378,7 @@ func summarise(rows []store.Request, since, until time.Time) requestSummaryJSON 
 	slices.SortFunc(out.Statuses, func(a, b statusCount) int { return strings.Compare(a.Status, b.Status) })
 	for model, s := range byModel {
 		out.Models = append(out.Models, modelTimes{
-			Model: model, Count: counts[model], QueueMs: median(s.queue), PrefillMs: median(s.prefill), DecodeMs: median(s.decode),
+			Model: model, Count: counts[model], QueueMs: median(s.queue), PrefillMs: median(s.prefill), DecodeMs: median(s.decode), TotalMs: median(s.total),
 		})
 	}
 	slices.SortFunc(out.Models, func(a, b modelTimes) int { return strings.Compare(a.Model, b.Model) })

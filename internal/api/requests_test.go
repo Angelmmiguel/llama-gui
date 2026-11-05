@@ -165,11 +165,15 @@ func TestRequestSummary(t *testing.T) {
 	}
 	models := body["models"].([]any)
 	a := models[0].(map[string]any)
-	if len(models) != 2 || a["model"] != "a" || a["count"] != 2.0 || a["queue_ms"] != 30.0 || a["prefill_ms"] != 270.0 || a["decode_ms"] != 1700.0 {
+	if len(models) != 2 || a["model"] != "a" || a["count"] != 2.0 || a["queue_ms"] != 30.0 || a["prefill_ms"] != 270.0 || a["decode_ms"] != 1700.0 || a["total_ms"] != 2000.0 {
 		t.Errorf("models %v", models)
 	}
-	if scatter := body["scatter"].([]any); len(scatter) != 3 || scatter[0].(map[string]any)["model"] != "b" {
+	scatter := body["scatter"].([]any)
+	if len(scatter) != 3 || scatter[0].(map[string]any)["model"] != "b" {
 		t.Errorf("scatter %v", scatter)
+	}
+	if p := scatter[2].(map[string]any); p["cache_n"] != 5.0 || p["stream"] != true || p["predicted_ms"] != 900.0 {
+		t.Errorf("scatter point %v", p)
 	}
 	if body["truncated"] != false {
 		t.Errorf("truncated %v", body["truncated"])
