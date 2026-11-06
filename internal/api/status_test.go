@@ -67,5 +67,8 @@ func TestServerControl(t *testing.T) {
 	h.server.err = supervisor.ErrNoBuild
 	h.table(t, []route{{"no build", http.MethodPost, "/api/v1/server/start", "", http.StatusConflict, "no llama-server build"}})
 	h.server.err = errors.New("boom")
-	h.table(t, []route{{"other", http.MethodPost, "/api/v1/server/restart", "", http.StatusInternalServerError, "boom"}})
+	code, body := h.sendJSON(t, http.MethodPost, "/api/v1/server/restart", "")
+	if code != http.StatusInternalServerError || body["error"] != "internal error; see the server log" {
+		t.Errorf("the cause may have reached the client: %d %v", code, body)
+	}
 }

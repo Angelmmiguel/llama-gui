@@ -337,6 +337,8 @@ func (a *api) fail(w http.ResponseWriter, err error) {
 		status = http.StatusGatewayTimeout
 	default:
 		a.log.Error("api request failed", "error", err)
+		WriteError(w, status, "internal error; see the server log")
+		return
 	}
 	WriteError(w, status, err.Error())
 }

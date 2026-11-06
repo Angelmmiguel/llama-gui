@@ -60,8 +60,11 @@ func (a *api) failLibrary(w http.ResponseWriter, err error) {
 		return // the client has gone
 	case errors.Is(err, context.DeadlineExceeded):
 		WriteError(w, http.StatusGatewayTimeout, "Hugging Face took too long to answer")
-	case errors.Is(err, library.ErrNotFound), errors.Is(err, library.ErrNoJob), errors.Is(err, fs.ErrNotExist):
+	case errors.Is(err, library.ErrNotFound), errors.Is(err, library.ErrNoJob):
 		WriteError(w, http.StatusNotFound, err.Error())
+	case errors.Is(err, fs.ErrNotExist):
+		a.log.Info("library file not found", "error", err)
+		WriteError(w, http.StatusNotFound, "the file was not found")
 	case errors.Is(err, library.ErrUnauthorized):
 		WriteError(w, http.StatusUnauthorized, err.Error())
 	case errors.Is(err, library.ErrRateLimited):
@@ -80,7 +83,7 @@ func (a *api) failLibrary(w http.ResponseWriter, err error) {
 		WriteError(w, http.StatusServiceUnavailable, err.Error())
 	case errors.As(err, &pathErr):
 		a.log.Error("library file operation failed", "error", err)
-		WriteError(w, http.StatusInternalServerError, err.Error())
+		WriteError(w, http.StatusInternalServerError, "a file operation failed; see the server log")
 	default:
 		a.log.Warn("hugging face request failed", "error", err)
 		WriteError(w, http.StatusBadGateway, "could not reach Hugging Face")

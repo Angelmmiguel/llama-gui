@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -388,6 +389,28 @@ func TestLibraryHubFailures(t *testing.T) {
 	w := h.send(t, http.MethodGet, "/api/v1/library/search?q=x", "")
 	if w.Code != http.StatusTooManyRequests || w.Header().Get("Retry-After") != "42" {
 		t.Errorf("%d %v", w.Code, w.Header())
+	}
+}
+
+func TestLibraryFileErrorsHidePaths(t *testing.T) {
+	const secret = "/mnt/secret/models/a.gguf"
+	for _, tc := range []struct {
+		name   string
+		cause  error
+		status int
+		want   string
+	}{
+		{"denied", fs.ErrPermission, http.StatusInternalServerError, "a file operation failed; see the server log"},
+		{"missing", fs.ErrNotExist, http.StatusNotFound, "the file was not found"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.hub.err = fmt.Errorf("reading: %w", &fs.PathError{Op: "open", Path: secret, Err: tc.cause})
+			code, body := h.sendJSON(t, http.MethodGet, "/api/v1/library/search?q=x", "")
+			if code != tc.status || body["error"] != tc.want {
+				t.Errorf("%d %v", code, body)
+			}
+		})
 	}
 }
 
