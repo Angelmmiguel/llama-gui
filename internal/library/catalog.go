@@ -99,10 +99,6 @@ type option struct {
 	f Fit
 }
 
-// Suggest returns up to three cards: the largest dense model that fits on the GPU, the most capable
-// MoE (or the smallest model, when there is none) that fits with room to grow, and the largest model
-// that fits only with offload. A category with no qualifying model is omitted. Embedding models are
-// never suggested. cacheType applies to both K and V.
 // FullPrecision says a quant is unquantised. Those are several times the size for little gain, so
 // they are never what to recommend, only there for who asks.
 func FullPrecision(quant string) bool {
@@ -113,6 +109,13 @@ func FullPrecision(quant string) bool {
 	return false
 }
 
+// roomyCtx is how many times the context a model must also fit at to count as having room to grow.
+const roomyCtx = 4
+
+// Suggest returns up to three cards: the largest dense model that fits on the GPU, the most capable
+// MoE (or the smallest model, when there is none) that fits with room to grow, and the largest model
+// that fits only with offload. A category with no qualifying model is omitted. Embedding models are
+// never suggested. cacheType applies to both K and V.
 func Suggest(cands []Candidate, hw Hardware, ctx int, cacheType string) []Suggestion {
 	var fits, offload []option
 	for _, c := range cands {
@@ -153,7 +156,14 @@ func Suggest(cands []Candidate, hw Hardware, ctx int, cacheType string) []Sugges
 		add(SuggestLargestDense, "The biggest dense model and quantisation that stays fully in memory at this context.", top)
 	}
 
-	pool := slices.DeleteFunc(slices.Clone(fits), func(o option) bool { return !o.c.Meta.IsMoE })
+	// The room to grow is the point of this one, so a model that only just fits doesn't qualify.
+	pool := slices.DeleteFunc(slices.Clone(fits), func(o option) bool {
+		if !o.c.Meta.IsMoE {
+			return true
+		}
+		v := Estimate(o.c.Meta, o.v.SizeBytes, roomyCtx*ctx, cacheType, cacheType, 1, hw).Verdict
+		return v != VerdictFitsGPU && v != VerdictFitsRAM
+	})
 	note := "A mixture-of-experts model that fits with its KV cache, so context or slots can grow."
 	if len(pool) == 0 {
 		pool = slices.DeleteFunc(slices.Clone(fits), func(o option) bool { return haveDense && o.c.Repo == top.c.Repo && o.v.ID == top.v.ID })

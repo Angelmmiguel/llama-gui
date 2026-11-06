@@ -74,6 +74,14 @@ func TestSuggest(t *testing.T) {
 	}
 }
 
+func TestSuggestLeavesRoomToGrow(t *testing.T) {
+	cands := []Candidate{cand("moe", true, map[string]int64{"Q4_0": 67, "Q8_0": 120}, "chat", "moe")}
+	got := Suggest(cands, Hardware{VRAMBytes: 128 * gb, RAMBytes: 128 * gb}, 32768, "f16")
+	if len(got) == 0 || got[0].Category != SuggestFastLongCtx || got[0].Quant != "Q4_0" {
+		t.Errorf("%+v", got)
+	}
+}
+
 func TestSuggestSkipsUnquantisedFiles(t *testing.T) {
 	cands := []Candidate{cand("m", false, map[string]int64{"Q4_K_M": 5, "BF16": 18, "F16": 19, "F32": 20}, "chat")}
 	got := Suggest(cands, Hardware{VRAMBytes: 48 * gb, RAMBytes: 64 * gb}, 8192, "f16")
