@@ -19,6 +19,7 @@ import {
 	resolveModelPath,
 	tokenize,
 	toProfile,
+	defaultCtx,
 	mlockFlag,
 	unsupportedFields
 } from './view';
@@ -392,5 +393,33 @@ describe('parseCommandLine', () => {
 
 	it('reports a flag missing its value', () => {
 		expect(parseCommandLine('-c').notes[0]).toContain('-c');
+	});
+});
+
+describe('default context', () => {
+	const models: LocalModelFile[] = [
+		{ id: 'a', name: 'a', path: 'small', files: ['s.gguf'], metadata: { context_length: 8192 } },
+		{
+			id: 'b',
+			name: 'b',
+			path: 'big.gguf',
+			files: ['big.gguf'],
+			metadata: { context_length: 131072 }
+		},
+		{ id: 'c', name: 'c', path: 'bare.gguf', files: ['bare.gguf'] }
+	];
+
+	it.each([
+		['caps at what a small model was trained for', 'small/s.gguf', 8192],
+		['stays at the default for a big model', 'big.gguf', 32768],
+		['stays at the default without metadata', 'bare.gguf', 32768],
+		['stays at the default for an unknown file', 'other.gguf', 32768]
+	])('%s', (_, file, want) => {
+		expect(defaultCtx(file, models)).toBe(want);
+	});
+
+	it('gives a new form that context', () => {
+		expect(newForm('small/s.gguf', 8192).ctx).toBe('8192');
+		expect(newForm('small/s.gguf').ctx).toBe('32768');
 	});
 });

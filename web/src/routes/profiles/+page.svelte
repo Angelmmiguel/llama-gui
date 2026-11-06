@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { SvelteMap } from 'svelte/reactivity';
 	import { page } from '$app/state';
@@ -47,6 +48,7 @@
 		quantOf,
 		resolveModelPath,
 		toProfile,
+		defaultCtx,
 		mlockFlag,
 		unsupportedFields,
 		type Form
@@ -71,6 +73,8 @@
 
 	let selected = $state('');
 	let form = $state<Form | null>(null);
+	// The context a new profile was given rather than chose, which picking a model may still change.
+	let defaultedCtx = '';
 	let baseline = $state.raw<Form | null>(null);
 	// Edits survive looking at another profile.
 	const drafts = new SvelteMap<string, Form>();
@@ -162,7 +166,8 @@
 	}
 
 	function startNew(modelFile = '') {
-		const next = newForm(modelFile);
+		const next = newForm(modelFile, defaultCtx(modelFile, local ?? []));
+		defaultedCtx = next.ctx;
 		if (modelFile && local) next.mmproj = mmprojOf(modelFile, local);
 		baseline = next;
 		select(NEW_ID, next);
@@ -174,6 +179,17 @@
 		skipped = out.skipped;
 		return out.profiles;
 	}
+
+	$effect(() => {
+		if (!isNew || !form) return;
+		const next = String(defaultCtx(form.modelFile, local ?? []));
+		untrack(() => {
+			if (form && form.ctx === defaultedCtx) {
+				form.ctx = next;
+				defaultedCtx = next;
+			}
+		});
+	});
 
 	$effect(() => {
 		void (async () => {

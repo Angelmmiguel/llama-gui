@@ -44,14 +44,15 @@ export interface Form {
 }
 
 export const CTX_CHOICES = [8192, 16384, 32768, 65536, 131072];
+const DEFAULT_CTX = 32768;
 export const DEFAULT_IDLE_MINUTES = '10';
 
 const str = (n: number | undefined) => (n === undefined || n === 0 ? '' : String(n));
 const strKeepZero = (n: number | undefined) => (n === undefined ? '' : String(n));
 
-export function newForm(modelFile = ''): Form {
+export function newForm(modelFile = '', ctx = DEFAULT_CTX): Form {
 	const alias = aliasFromFile(modelFile);
-	return fromProfile({ id: '', name: alias, alias, model_file: modelFile, ctx_size: 32768 }, true);
+	return fromProfile({ id: '', name: alias, alias, model_file: modelFile, ctx_size: ctx }, true);
 }
 
 export function fromProfile(p: Profile, fresh = false): Form {
@@ -604,4 +605,11 @@ export function parseCommandLine(line: string): ImportResult {
 export function mmprojOf(file: string, local: readonly LocalModelFile[]): string {
 	const m = local.find((l) => file.startsWith(`${l.path}/`));
 	return m?.mmproj ? `${m.path}/${m.mmproj}` : '';
+}
+
+/** A new profile's context: past what the model was trained for, slots are capped but memory is not. */
+export function defaultCtx(file: string, local: readonly LocalModelFile[]): number {
+	const model = local.find((l) => file === l.path || file.startsWith(`${l.path}/`));
+	const trained = model?.metadata?.context_length ?? 0;
+	return trained > 0 ? Math.min(DEFAULT_CTX, trained) : DEFAULT_CTX;
 }

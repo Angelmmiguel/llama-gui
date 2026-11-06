@@ -257,6 +257,7 @@ export interface LocalModelFile {
 	files: string[];
 	mmproj?: string;
 	shards?: number;
+	metadata?: { context_length?: number };
 }
 
 export interface MemoryDevice {
