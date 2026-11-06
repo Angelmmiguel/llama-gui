@@ -247,3 +247,34 @@ func TestNextCursor(t *testing.T) {
 		}
 	}
 }
+
+func TestReadRemoteMTP(t *testing.T) {
+	b := &ggufBuilder{}
+	b.kvStr("general.architecture", "qwen35")
+	b.kvU32("qwen35.nextn_predict_layers", 1)
+	data := b.bytes(3, 1)
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		if r.Header.Get("Range") == "" {
+			t.Error("no Range: this must not download the file")
+		}
+		_, _ = w.Write(data)
+	}))
+	t.Cleanup(srv.Close)
+	c := NewClient(srv.Client(), srv.URL, "")
+	for range 2 {
+		if got, err := c.ReadRemoteMTP(t.Context(), "a/b", "m.gguf"); err != nil || got != MTPHeads {
+			t.Fatalf("%q %v", got, err)
+		}
+	}
+	if hits.Load() != 1 {
+		t.Errorf("cache missed: %d hits", hits.Load())
+	}
+	if _, err := c.ReadRemoteMTP(t.Context(), "bad", "m.gguf"); !errors.Is(err, ErrInvalidRepo) {
+		t.Errorf("repo not validated: %v", err)
+	}
+	if _, err := c.ReadRemoteMTP(t.Context(), "a/b", "../x.gguf"); err == nil {
+		t.Error("file not validated")
+	}
+}

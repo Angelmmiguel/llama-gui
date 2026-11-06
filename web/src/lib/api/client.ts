@@ -509,6 +509,8 @@ export interface GgufMetadata {
 	context_length: number;
 	expert_count: number;
 	is_moe: boolean;
+	/** Multi Token Prediction heads in this file. */
+	mtp_layers?: number;
 	[key: string]: unknown;
 }
 
@@ -791,6 +793,12 @@ export const searchLibrary = (
 export const getLibraryRepo = (repo: string, query: FitQuery, signal?: AbortSignal) =>
 	request<{ repo: RepoRow; hardware: LibraryHardware }>('GET', '/library/repo', {
 		query: { ...query, repo },
+		signal
+	});
+/** Per variant: heads, companion, none or unknown; tolerate others. */
+export const getLibraryRepoMTP = (repo: string, signal?: AbortSignal) =>
+	request<{ variants: Record<string, string> }>('GET', '/library/repo/mtp', {
+		query: { repo },
 		signal
 	});
 export const getLibrarySuggestions = (query: FitQuery, signal?: AbortSignal) =>

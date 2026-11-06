@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -30,7 +31,11 @@ const (
 	// maxSearchCursor is generous: the hub's cursors are long base64 and opaque to us.
 	maxSearchCursor = 4096
 	maxPullFiles    = 128
-	maxModelPath    = 1024
+	// mtpReadsAtOnce keeps a repo of many quants from looking like a burst to the hub.
+	mtpReadsAtOnce = 4
+	// mtpUnknown is a variant whose header could not be read.
+	mtpUnknown   = "unknown"
+	maxModelPath = 1024
 )
 
 // kvTypes are the cache types llama-server accepts for -ctk and -ctv.
@@ -470,6 +475,45 @@ func (a *api) libraryRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	WriteJSON(w, http.StatusOK, map[string]any{"repo": row, "hardware": p.hw})
+}
+
+// libraryRepoMTP reads every variant's header, so it is its own route for a row someone opened,
+// not part of what a search asks about each of its results.
+func (a *api) libraryRepoMTP(w http.ResponseWriter, r *http.Request) {
+	repo := r.URL.Query().Get("repo")
+	if !library.ValidRepo(repo) {
+		a.failLibrary(w, library.ErrInvalidRepo)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), hubTimeout)
+	defer cancel()
+	info, err := a.Hub.Repo(ctx, repo)
+	if err != nil {
+		a.failLibrary(w, err)
+		return
+	}
+	answers := make([]string, len(info.Variants))
+	slot := make(chan struct{}, mtpReadsAtOnce)
+	var wg sync.WaitGroup
+	for i, v := range info.Variants {
+		wg.Go(func() {
+			slot <- struct{}{}
+			defer func() { <-slot }()
+			// One unreadable file only leaves that variant unknown.
+			if m, err := a.Hub.ReadRemoteMTP(ctx, repo, v.Files[0].Name); err == nil {
+				answers[i] = string(m)
+			} else {
+				a.log.Debug("reading remote MTP", "repo", repo, "error", err)
+				answers[i] = mtpUnknown
+			}
+		})
+	}
+	wg.Wait()
+	variants := make(map[string]string, len(info.Variants))
+	for i, v := range info.Variants {
+		variants[v.ID] = answers[i]
+	}
+	WriteJSON(w, http.StatusOK, map[string]any{"variants": variants})
 }
 
 func (a *api) librarySearch(w http.ResponseWriter, r *http.Request) {

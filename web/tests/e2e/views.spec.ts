@@ -292,3 +292,46 @@ test('with no model in memory a fresh Overview shows only what to do next', asyn
 	await expect(page.getByRole('heading', { name: /MODELS IN MEMORY/ })).toBeHidden();
 	await expect(page.getByRole('group', { name: 'Chart range' })).toBeHidden();
 });
+
+test('a Library row tags the quants that have MTP heads', async ({ page }) => {
+	const variant = (id: string) => ({
+		id,
+		quant: id,
+		files: [{ name: `${id}.gguf`, size: 1 }],
+		size_bytes: 1 << 30,
+		shards: 1,
+		fit: { total_bytes: 1 << 30, verdict: 'fits_gpu', weights_bytes: 1 << 30 },
+		download_files: [`${id}.gguf`],
+		download_bytes: 1 << 30
+	});
+	await page.route('**/api/v1/library/search*', async (route) => {
+		if (!new URL(route.request().url()).searchParams.get('q')) return route.continue();
+		await route.fulfill({
+			json: {
+				source: 'repo',
+				results: [
+					{
+						repo: 'u/m',
+						name: 'm',
+						tags: [],
+						downloads: 1,
+						variants: [variant('Q4_K_M'), variant('Q8_0'), variant('side')]
+					}
+				],
+				hardware: { vram_bytes: 8 << 30, ram_bytes: 8 << 30, headroom_bytes: 0 }
+			}
+		});
+	});
+	await page.route('**/api/v1/library/repo/mtp*', (route) =>
+		route.fulfill({ json: { variants: { Q4_K_M: 'none', Q8_0: 'heads', side: 'companion' } } })
+	);
+	await open(page, '/library', 'Library');
+	await page.getByPlaceholder('Search models or paste user/repo').fill('u/m');
+	const main = page.locator('main');
+	await expect(main.locator('.quant', { hasText: 'Q8_0' }).getByText('MTP')).toBeVisible();
+	await expect(main.locator('.quant', { hasText: 'Q4_K_M' }).getByText('MTP')).toHaveCount(0);
+	await expect(
+		main.locator('.quant', { hasText: 'side' }).getByText('MTP companion')
+	).toBeVisible();
+	await expect(main.getByText(/--spec-type draft-mtp/)).toBeVisible();
+});

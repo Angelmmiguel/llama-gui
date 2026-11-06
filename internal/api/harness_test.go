@@ -213,6 +213,15 @@ func (f *fakeHub) Repo(_ context.Context, repo string) (library.RepoInfo, error)
 	}
 	return info, nil
 }
+func (f *fakeHub) ReadRemoteMTP(_ context.Context, _, file string) (library.MTP, error) {
+	if file == "broken.gguf" {
+		return library.MTPNone, errors.New("unreadable")
+	}
+	if strings.Contains(file, "mtp") {
+		return library.MTPHeads, nil
+	}
+	return library.MTPNone, nil
+}
 func (f *fakeHub) ReadRemoteMetadata(_ context.Context, _, file string) (library.Metadata, error) {
 	f.calls = append(f.calls, "meta "+file)
 	if f.metaErr != nil {

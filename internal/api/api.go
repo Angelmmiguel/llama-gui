@@ -113,6 +113,7 @@ type Hub interface {
 	Search(ctx context.Context, query, filter, cursor string, limit int) (library.SearchPage, error)
 	Repo(ctx context.Context, repo string) (library.RepoInfo, error)
 	ReadRemoteMetadata(ctx context.Context, repo, file string) (library.Metadata, error)
+	ReadRemoteMTP(ctx context.Context, repo, file string) (library.MTP, error)
 	// Candidates is the starter catalog resolved against the hub, failing only when
 	// the hub could answer for none of it.
 	Candidates(ctx context.Context) ([]library.Candidate, error)
@@ -214,6 +215,7 @@ func Handler(deps Deps) http.Handler {
 		"DELETE /library/local":          a.libraryDelete,
 		"GET /library/search":            a.librarySearch,
 		"GET /library/repo":              a.libraryRepo,
+		"GET /library/repo/mtp":          a.libraryRepoMTP,
 		"GET /library/suggestions":       a.librarySuggestions,
 		"GET /library/disk":              a.libraryDisk,
 		"GET /library/downloads":         a.listDownloads,

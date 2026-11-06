@@ -48,6 +48,7 @@ type Metadata struct {
 	Alignment       int    `json:"alignment"`
 	IsMoE           bool   `json:"is_moe"`
 	IsMMProj        bool   `json:"is_mmproj"`
+	MTPLayers       int    `json:"mtp_layers"` // Multi Token Prediction heads, 0 without
 }
 
 // ftypeLabels maps llama_ftype values to their usual names.
@@ -233,38 +234,114 @@ func toInt(v uint64) int {
 	return int(v)
 }
 
+// header checks the magic and version, and returns the tensor and key/value counts.
+func (l *limitedReader) header() (tensors, kvs uint64, err error) {
+	var magic [4]byte
+	if err := l.full(magic[:]); err != nil {
+		if errors.Is(err, ErrTruncated) {
+			return 0, 0, ErrNotGGUF
+		}
+		return 0, 0, err
+	}
+	if string(magic[:]) != "GGUF" {
+		return 0, 0, ErrNotGGUF
+	}
+	ver, err := l.u32()
+	if err != nil {
+		return 0, 0, err
+	}
+	if ver != 2 && ver != 3 {
+		return 0, 0, fmt.Errorf("%w: %d", ErrUnsupported, ver)
+	}
+	if tensors, err = l.u64(); err != nil {
+		return 0, 0, err
+	}
+	if kvs, err = l.u64(); err != nil {
+		return 0, 0, err
+	}
+	if kvs > maxKVCount {
+		return 0, 0, fmt.Errorf("%w: %d key/value pairs", ErrMalformed, kvs)
+	}
+	return tensors, kvs, nil
+}
+
+// MTP says how a GGUF file offers Multi Token Prediction.
+type MTP string
+
+// The answers of ScanMTP. A repo's file names don't say: they often leave MTP out, and a repo
+// named for it can hold a main model without heads next to a companion file that has them.
+const (
+	MTPNone MTP = "none"
+	// MTPHeads is a model with the heads built in, ready for --spec-type draft-mtp.
+	MTPHeads MTP = "heads"
+	// MTPCompanion holds only the heads, for use next to a main model.
+	MTPCompanion MTP = "companion"
+)
+
+const (
+	mtpKeySuffix    = ".nextn_predict_layers"
+	companionSuffix = "-assistant"
+)
+
+// ScanMTP reads only as far as it must, which is what makes asking about every quant of a repo
+// affordable: converters write the model's keys before the tokenizer, whose vocabulary can take
+// many MiB, so reaching the tokenizer means there is no answer further on.
+func ScanMTP(r io.Reader, maxBytes int64) (MTP, error) {
+	l := &limitedReader{r: bufio.NewReaderSize(r, 64<<10), max: maxBytes}
+	_, kvCount, err := l.header()
+	if err != nil {
+		return MTPNone, err
+	}
+	var architecture string
+	for range kvCount {
+		key, ok, err := l.str(maxKeyLen)
+		if err != nil {
+			return MTPNone, err
+		}
+		if !ok {
+			return MTPNone, ErrMalformed
+		}
+		if strings.HasPrefix(key, "tokenizer.") {
+			return MTPNone, nil
+		}
+		t, err := l.u32()
+		if err != nil {
+			return MTPNone, err
+		}
+		switch {
+		case t == 8 && key == "general.architecture":
+			if architecture, _, err = l.str(maxValueLen); err != nil {
+				return MTPNone, err
+			}
+		case scalarSize(t) > 0 && strings.HasSuffix(key, mtpKeySuffix):
+			layers, isInt, err := l.readInt(t)
+			if err != nil {
+				return MTPNone, err
+			}
+			if isInt && layers > 0 {
+				if strings.HasSuffix(architecture, companionSuffix) {
+					return MTPCompanion, nil
+				}
+				return MTPHeads, nil
+			}
+		default:
+			if err := l.skipValue(t, 0); err != nil {
+				return MTPNone, err
+			}
+		}
+	}
+	return MTPNone, nil
+}
+
 // ParseGGUF reads a GGUF v2 or v3 header from r, consuming at most maxBytes. It never allocates
 // more than a bounded amount for hostile input and returns one of the package's sentinel errors.
 func ParseGGUF(r io.Reader, maxBytes int64) (Metadata, error) {
 	l := &limitedReader{r: bufio.NewReaderSize(r, 64<<10), max: maxBytes}
 	m := Metadata{FileType: -1, Alignment: 32}
-
-	var magic [4]byte
-	if err := l.full(magic[:]); err != nil {
-		if errors.Is(err, ErrTruncated) {
-			return m, ErrNotGGUF
-		}
+	var kvCount uint64
+	var err error
+	if m.TensorCount, kvCount, err = l.header(); err != nil {
 		return m, err
-	}
-	if string(magic[:]) != "GGUF" {
-		return m, ErrNotGGUF
-	}
-	ver, err := l.u32()
-	if err != nil {
-		return m, err
-	}
-	if ver != 2 && ver != 3 {
-		return m, fmt.Errorf("%w: %d", ErrUnsupported, ver)
-	}
-	if m.TensorCount, err = l.u64(); err != nil {
-		return m, err
-	}
-	kvCount, err := l.u64()
-	if err != nil {
-		return m, err
-	}
-	if kvCount > maxKVCount {
-		return m, fmt.Errorf("%w: %d key/value pairs", ErrMalformed, kvCount)
 	}
 
 	ints := map[string]uint64{} // keys with an architecture prefix, resolved once it is known
@@ -346,6 +423,7 @@ func ParseGGUF(r io.Reader, maxBytes int64) (Metadata, error) {
 	m.ValueLength = get("attention.value_length")
 	m.ExpertCount = get("expert_count")
 	m.IsMoE = m.ExpertCount > 1
+	m.MTPLayers = get(strings.TrimPrefix(mtpKeySuffix, "."))
 	m.Quant = ftypeLabels[m.FileType]
 	m.IsMMProj = general == "mmproj" || m.Architecture == "clip"
 	return m, nil
@@ -355,7 +433,7 @@ func ParseGGUF(r io.Reader, maxBytes int64) (Metadata, error) {
 func wantedKey(key string) bool {
 	for _, s := range [...]string{
 		".block_count", ".context_length", ".embedding_length", ".attention.head_count",
-		".attention.head_count_kv", ".attention.key_length", ".attention.value_length", ".expert_count",
+		".attention.head_count_kv", ".attention.key_length", ".attention.value_length", ".expert_count", mtpKeySuffix,
 	} {
 		if strings.HasSuffix(key, s) {
 			return true

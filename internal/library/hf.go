@@ -33,11 +33,13 @@ var (
 const (
 	remoteMetaStart = 256 << 10
 	remoteMetaLimit = 64 << 20
-	maxTreePages    = 8
-	searchTTL       = 5 * time.Minute
-	repoTTL         = 5 * time.Minute
-	metaTTL         = time.Hour
-	cacheMax        = 512
+	// remoteMTPBytes reaches past the model keys, which took under 4 KiB in every real file checked.
+	remoteMTPBytes = 256 << 10
+	maxTreePages   = 8
+	searchTTL      = 5 * time.Minute
+	repoTTL        = 5 * time.Minute
+	metaTTL        = time.Hour
+	cacheMax       = 512
 )
 
 var (
@@ -456,6 +458,31 @@ func (c *Client) ReadRemoteMetadata(ctx context.Context, repo, file string) (Met
 			return Metadata{}, ErrTooLarge
 		}
 	}
+}
+
+// ReadRemoteMTP says how a repo file offers Multi Token Prediction, reading far less of it than
+// ReadRemoteMetadata does.
+func (c *Client) ReadRemoteMTP(ctx context.Context, repo, file string) (MTP, error) {
+	if !ValidRepo(repo) {
+		return MTPNone, ErrInvalidRepo
+	}
+	if _, err := validRepoFile(file); err != nil {
+		return MTPNone, err
+	}
+	key := "mtp:" + repo + "/" + file
+	if v, ok := c.cached(key); ok {
+		return v.(MTP), nil
+	}
+	buf, err := c.prefix(ctx, c.resolveURL(repo, file), remoteMTPBytes)
+	if err != nil {
+		return MTPNone, err
+	}
+	m, err := ScanMTP(bytes.NewReader(buf), int64(len(buf)))
+	if err != nil {
+		return MTPNone, err
+	}
+	c.store(key, m, metaTTL)
+	return m, nil
 }
 
 func (c *Client) prefix(ctx context.Context, u string, n int64) ([]byte, error) {

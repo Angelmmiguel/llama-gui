@@ -9,6 +9,7 @@
 		getLibraryDisk,
 		getLibraryLocal,
 		getLibraryRepo,
+		getLibraryRepoMTP,
 		getLibrarySuggestions,
 		listDownloads,
 		loadModel,
@@ -36,6 +37,7 @@
 	import Segmented from '$lib/components/Segmented.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import StackedBar from '$lib/components/StackedBar.svelte';
+	import Tag from '$lib/components/Tag.svelte';
 	import TextLink from '$lib/components/TextLink.svelte';
 	import ToggleChip from '$lib/components/ToggleChip.svelte';
 	import { tones } from '$lib/components/tones';
@@ -108,6 +110,8 @@
 	let suggestionsError = $state('');
 	let hub = $state.raw<{ source: string; results: RepoRow[]; next: string } | null>(null);
 	let hubLoadingMore = $state(false);
+	// Per repo and variant, as read from the headers.
+	let mtp = $state<Record<string, Record<string, string>>>({});
 	let hubError = $state('');
 	let hubLoading = $state(false);
 	// Rows of a plain search, as each one's lookup comes back.
@@ -284,6 +288,20 @@
 			hubLoadingMore = false;
 		}
 	}
+
+	// This reads each quant's header, so it waits until someone opens the row.
+	$effect(() => {
+		const repo = openHub;
+		if (tab !== 'hub' || !repo || untrack(() => mtp[repo])) return;
+		const controller = new AbortController();
+		getLibraryRepoMTP(repo, controller.signal).then(
+			(res) => (mtp[repo] = res.variants),
+			() => {
+				// Without an answer the quants simply carry no tag, and opening the row asks again.
+			}
+		);
+		return () => controller.abort();
+	});
 
 	// A plain search knows no files or sizes. Asking for each row a few at a time keeps the list
 	// quick to appear and the hub's rate limit out of reach; the server caches what comes back.
@@ -584,7 +602,11 @@
 			{@render variantHeader()}
 			{#each r.variants as v (v.id)}
 				<div class="variant">
-					<span>{v.quant}{v.shards > 1 ? ` × ${v.shards}` : ''}</span>
+					<span class="quant">
+						{v.quant}{v.shards > 1 ? ` × ${v.shards}` : ''}
+						{#if mtp[r.repo]?.[v.id] === 'heads'}<Tag>MTP</Tag>{/if}
+						{#if mtp[r.repo]?.[v.id] === 'companion'}<Tag>MTP companion</Tag>{/if}
+					</span>
 					<span class="dim">{formatBytes(v.size_bytes)}</span>
 					<span class="variant-bar"><FitBar fit={v.fit} {scale} bare /></span>
 					<span style:color={verdictColor(v.fit)}>{verdictLabel(v.fit)} · {fitTotal(v.fit)}</span>
@@ -594,6 +616,12 @@
 				</div>
 			{/each}
 			<span class="hint">{repoHint(r, disk?.path ?? '')}</span>
+			{#if Object.values(mtp[r.repo] ?? {}).some((m) => m === 'heads' || m === 'companion')}
+				<span class="hint">
+					MTP speeds up generation: add --spec-type draft-mtp to a profile's extra arguments. Tags
+					come from each file's header, as names often leave it out.
+				</span>
+			{/if}
 		{/if}
 	</ModelRow>
 {/snippet}
@@ -936,11 +964,18 @@
 
 	.variant {
 		display: grid;
-		grid-template-columns: 100px 70px minmax(0, 1fr) 230px 110px;
+		grid-template-columns: 170px 70px minmax(0, 1fr) 230px 110px;
 		align-items: center;
 		gap: var(--space-14);
 		font-family: var(--font-mono);
 		font-size: var(--fs-12);
+	}
+
+	.quant {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-4) var(--space-6);
 	}
 
 	.variant-head {

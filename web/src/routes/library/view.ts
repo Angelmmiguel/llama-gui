@@ -185,6 +185,7 @@ export function displayTags(tags: readonly string[], meta?: GgufMetadata | null)
 		if (name) out.add(name);
 	}
 	if (meta?.is_moe) out.add('MoE');
+	if (meta?.mtp_layers) out.add('MTP');
 	return [...out].slice(0, 4);
 }
 

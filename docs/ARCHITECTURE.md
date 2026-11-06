@@ -174,6 +174,7 @@ meaning: 404, 401 when a token may be needed, 429 with `Retry-After` when known,
 | `GET /library/local?ctx=&kv=&parallel=` · `DELETE /library/local?path=` | `{models, hardware}`: the scan with `profile`, `router_id`, `status` and `fit`, measured once loaded. `ctx` is the total, `-c`. Delete answers 409 while the model is loaded |
 | `GET /library/search?q=&filter=&cursor=&ctx=&kv=` | `{source, results, next_cursor, hardware}`. Source is `catalog` with no `q`, `repo` for a `user/repo` query, and `search` otherwise, which has no variants and pages with `cursor`. `filter` is chat, vision, embedding, code or moe |
 | `GET /library/repo?repo=&ctx=&kv=` | `{repo, hardware}`: `variants` with `fit` and `download_files` (the mmproj included), `best`, `metadata` read with range requests and cached, or `metadata_error` with estimated fits |
+| `GET /library/repo/mtp?repo=` | `{variants}`: for each variant `heads`, `companion`, `none` or `unknown`, from the start of its file header. Names can't be trusted, and asked only for a row someone opened, as this reads every variant |
 | `GET /library/suggestions?ctx=&kv=` | `{suggestions, hardware}` from the starter catalog |
 | `GET,POST /library/downloads` · `DELETE /library/downloads/{id}?remove_partials=` | `{jobs}` with progress; `{repo, files}` answers 202 with the job, 409 if already on disk or queued, 507 without the space; cancel, keeping partials to resume unless told otherwise |
 | `GET /library/disk` | `{path, gguf_bytes, free_bytes, total_bytes}` |

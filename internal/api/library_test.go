@@ -513,3 +513,23 @@ func TestLibraryDownloads(t *testing.T) {
 	h.downloads.err = library.ErrNoJob
 	h.table(t, []route{{"unknown job", http.MethodDelete, "/api/v1/library/downloads/dl-9", "", http.StatusNotFound, "no such"}})
 }
+
+func TestLibraryRepoMTP(t *testing.T) {
+	h := newHarness(t)
+	h.hub.repos["u/m"] = library.RepoInfo{Variants: []library.Variant{
+		{ID: "a-mtp", Files: []library.File{{Name: "a-mtp.gguf"}}},
+		{ID: "plain", Files: []library.File{{Name: "plain.gguf"}}},
+		{ID: "bad", Files: []library.File{{Name: "broken.gguf"}}},
+	}}
+	code, body := h.sendJSON(t, http.MethodGet, "/api/v1/library/repo/mtp?repo=u/m", "")
+	got, _ := body["variants"].(map[string]any)
+	if code != http.StatusOK || got["a-mtp"] != "heads" || got["plain"] != "none" || got["bad"] != "unknown" {
+		t.Errorf("%d %v", code, body)
+	}
+	if code, _ = h.sendJSON(t, http.MethodGet, "/api/v1/library/repo/mtp?repo=bad", ""); code != http.StatusBadRequest {
+		t.Errorf("bad repo: %d", code)
+	}
+	if code, _ = h.sendJSON(t, http.MethodGet, "/api/v1/library/repo/mtp?repo=u/missing", ""); code != http.StatusNotFound {
+		t.Errorf("missing repo: %d", code)
+	}
+}

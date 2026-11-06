@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -174,4 +175,59 @@ func TestParseRealGGUF(t *testing.T) {
 	if m.Architecture != "llama" || m.Quant != "Q8_0" || m.IsMMProj || m.BlockCount == 0 || m.EmbeddingLength == 0 {
 		t.Errorf("unexpected metadata: %+v", m)
 	}
+}
+
+func TestScanMTP(t *testing.T) {
+	file := func(arch string, keys func(b *ggufBuilder)) []byte {
+		b := &ggufBuilder{}
+		b.kvStr("general.architecture", arch)
+		keys(b)
+		return b.bytes(3, 1)
+	}
+	for name, tc := range map[string]struct {
+		data []byte
+		want MTP
+	}{
+		"heads":     {file("qwen35", func(b *ggufBuilder) { b.kvU32("qwen35.nextn_predict_layers", 1) }), MTPHeads},
+		"companion": {file("gemma4-assistant", func(b *ggufBuilder) { b.kvU32("gemma4-assistant.nextn_predict_layers", 4) }), MTPCompanion},
+		"none":      {file("qwen35", func(b *ggufBuilder) { b.kvU32("qwen35.block_count", 12) }), MTPNone},
+		"zero":      {file("qwen35", func(b *ggufBuilder) { b.kvU32("qwen35.nextn_predict_layers", 0) }), MTPNone},
+		"stops at the tokenizer": {file("qwen35", func(b *ggufBuilder) {
+			b.kvStr("tokenizer.ggml.model", "gpt2")
+			b.kvU32("qwen35.nextn_predict_layers", 1)
+		}), MTPNone},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := ScanMTP(bytes.NewReader(tc.data), int64(len(tc.data)))
+			if err != nil || got != tc.want {
+				t.Errorf("got %q, %v, want %q", got, err, tc.want)
+			}
+		})
+	}
+	if _, err := ScanMTP(strings.NewReader("nope"), 4); !errors.Is(err, ErrNotGGUF) {
+		t.Errorf("not a GGUF: %v", err)
+	}
+	truncated := file("qwen35", func(b *ggufBuilder) { b.kvU32("qwen35.nextn_predict_layers", 1) })
+	if _, err := ScanMTP(bytes.NewReader(truncated[:20]), 1<<20); !errors.Is(err, ErrTruncated) {
+		t.Errorf("truncated: %v", err)
+	}
+}
+
+func TestParseGGUFReadsMTPLayers(t *testing.T) {
+	b := &ggufBuilder{}
+	b.kvStr("general.architecture", "qwen35")
+	b.kvU32("qwen35.nextn_predict_layers", 2)
+	data := b.bytes(3, 1)
+	m, err := ParseGGUF(bytes.NewReader(data), int64(len(data)))
+	if err != nil || m.MTPLayers != 2 {
+		t.Errorf("%+v %v", m, err)
+	}
+}
+
+func FuzzScanMTP(f *testing.F) {
+	f.Add(sampleGGUF(3))
+	f.Add([]byte("GGUF"))
+	f.Fuzz(func(_ *testing.T, data []byte) {
+		_, _ = ScanMTP(bytes.NewReader(data), int64(len(data)))
+	})
 }

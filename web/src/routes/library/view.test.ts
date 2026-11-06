@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { DownloadJob, LibraryFit, LocalModel } from '$lib/api/client';
+import type { DownloadJob, GgufMetadata, LibraryFit, LocalModel } from '$lib/api/client';
 import {
 	displayTags,
 	downloadState,
@@ -123,6 +123,7 @@ describe('labels', () => {
 		expect(
 			displayTags(['gguf', 'license:mit', 'chat', 'conversational', 'image-text-to-text'])
 		).toEqual(['Chat', 'Vision']);
+		expect(displayTags([], { mtp_layers: 1 } as GgufMetadata)).toEqual(['MTP']);
 	});
 
 	it('names GPUs compactly, and the CPU when there are none', () => {
