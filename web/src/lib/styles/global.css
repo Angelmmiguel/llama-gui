@@ -201,7 +201,31 @@ dl {
 	background: repeating-linear-gradient(-45deg, var(--queued-a) 0 3px, var(--queued-b) 3px 6px);
 }
 
+.shimmer {
+	display: block;
+	border-radius: var(--radius-3);
+	background: linear-gradient(
+		90deg,
+		var(--border-row) 35%,
+		var(--border-ghost) 50%,
+		var(--border-row) 65%
+	);
+	background-size: 300% 100%;
+	animation: shimmer 3.5s ease-in-out infinite;
+	animation-delay: var(--delay, 0s);
+}
+
+@keyframes shimmer {
+	from {
+		background-position: 200% 0;
+	}
+	to {
+		background-position: -200% 0;
+	}
+}
+
 @media (prefers-reduced-motion: reduce) {
+	.shimmer,
 	.pulse,
 	.blink,
 	.flow,

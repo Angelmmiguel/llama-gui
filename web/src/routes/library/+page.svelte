@@ -1120,20 +1120,6 @@
 		color: var(--color-ok);
 	}
 
-	.shimmer {
-		display: block;
-		border-radius: var(--radius-3);
-		background: linear-gradient(
-			90deg,
-			var(--border-row) 35%,
-			var(--border-ghost) 50%,
-			var(--border-row) 65%
-		);
-		background-size: 300% 100%;
-		animation: shimmer 3.5s ease-in-out infinite;
-		animation-delay: var(--delay);
-	}
-
 	.push {
 		margin-top: auto;
 	}
@@ -1152,21 +1138,6 @@
 		flex-direction: column;
 		gap: var(--space-8);
 		min-width: 0;
-	}
-
-	@keyframes shimmer {
-		from {
-			background-position: 200% 0;
-		}
-		to {
-			background-position: -200% 0;
-		}
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.shimmer {
-			animation: none;
-		}
 	}
 
 	.card {

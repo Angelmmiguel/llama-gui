@@ -28,6 +28,7 @@
 	import Segmented from '$lib/components/Segmented.svelte';
 	import SelectCard from '$lib/components/SelectCard.svelte';
 	import SelectField from '$lib/components/SelectField.svelte';
+	import Spinner from '$lib/components/Spinner.svelte';
 	import TextField from '$lib/components/TextField.svelte';
 	import { tones } from '$lib/components/tones';
 	import { formatBytes } from '$lib/format';
@@ -59,7 +60,7 @@
 		type UpstreamProblem
 	} from './view';
 
-	const NIGHTLY_LIMIT = 100;
+	const NIGHTLY_LIMIT = 25;
 	const STABLE_LIMIT = 10;
 	const TIMELINE_DOTS = 24;
 	const JOBS_MS = 1000;
@@ -82,6 +83,8 @@
 	let picked = $state('');
 	let details = $state.raw<Record<string, AvailableRelease>>({});
 	let customTag = $state('');
+	// Choosing a release by its tag instead of from a channel's list.
+	let otherTag = $state(false);
 	let customError = $state('');
 	let customBusy = $state(false);
 	let backendChosen = $state('');
@@ -332,11 +335,14 @@
 		}
 	}
 
-	function pickChannel(next: Channel) {
+	function pickVersionSource(next: string) {
 		channelChosen = true;
-		channel = next;
-		picked = '';
 		customError = '';
+		otherTag = next === 'other';
+		if (otherTag) return;
+		channel = next as Channel;
+		picked = '';
+		customTag = '';
 	}
 
 	async function useCustomTag() {
@@ -353,7 +359,6 @@
 			channelChosen = true;
 			if (r.channel === 'stable' || r.channel === 'nightly') channel = r.channel;
 			picked = r.tag;
-			customTag = '';
 		} catch (e) {
 			const issue = upstreamProblem(e);
 			customError = issue.kind === 'rate-limited' ? issue.message : errorText(e);
@@ -521,43 +526,56 @@
 					<Segmented
 						label="Channel"
 						surface="ground"
-						options={[{ value: 'stable' }, { value: 'nightly' }]}
-						value={channel}
-						onchange={(v) => pickChannel(v as Channel)}
+						options={[{ value: 'stable' }, { value: 'nightly' }, { value: 'other' }]}
+						value={otherTag ? 'other' : channel}
+						onchange={pickVersionSource}
 					/>
-					<div class="select">
-						<SelectField
-							label="Release"
-							mono
-							size={38}
-							options={channelOptions}
-							value={target?.tag ?? ''}
-							onchange={(v) => (picked = v)}
-						/>
-					</div>
-					<form
-						class="custom"
-						onsubmit={(e) => {
-							e.preventDefault();
-							void useCustomTag();
-						}}
-					>
-						<TextField
-							label="Any tag"
-							width="120px"
-							placeholder="b8105"
-							class="mono"
-							bind:value={customTag}
-						/>
-						<Button size="ml" type="submit" disabled={customBusy || !customTag.trim()}>
-							{customBusy ? 'Looking…' : 'Use'}
-						</Button>
-					</form>
+					{#if otherTag}
+						<form
+							class="custom"
+							onsubmit={(e) => {
+								e.preventDefault();
+								void useCustomTag();
+							}}
+						>
+							<TextField
+								label="Tag"
+								placeholder="b8105 or v0.9.0"
+								class="mono"
+								bind:value={customTag}
+							/>
+							<Button size="ml" type="submit" disabled={customBusy || !customTag.trim()}>
+								{customBusy ? 'Looking…' : 'Use'}
+							</Button>
+						</form>
+					{:else}
+						<div class="select">
+							<SelectField
+								label="Release"
+								mono
+								size={38}
+								options={channelOptions}
+								value={target?.tag ?? ''}
+								onchange={(v) => (picked = v)}
+							/>
+						</div>
+					{/if}
 				</div>
 				{#if customError}<span class="error" role="alert">{customError}</span>{/if}
 			</div>
 		{:else if !releasesLoaded}
-			<span class="note">Reading releases from GitHub…</span>
+			<div class="selector" aria-busy="true">
+				<div class="selector-head">
+					<Eyebrow>VERSION</Eyebrow>
+					<span class="reading" role="status"
+						><Spinner size={10} />Reading releases from GitHub…</span
+					>
+				</div>
+				<div class="selector-row">
+					<span class="shimmer" style:height="38px" style:width="200px"></span>
+					<span class="shimmer select" style:height="38px" style:--delay="0.15s"></span>
+				</div>
+			</div>
 		{/if}
 	</Panel>
 	<Panel flex="1 1 360px" padding="24px" gap={4}>
@@ -689,8 +707,34 @@
 	.selector-row {
 		display: flex;
 		flex-wrap: wrap;
-		align-items: flex-end;
+		align-items: center;
 		gap: var(--space-12);
+	}
+
+	/* The row reads as one control under its VERSION heading, so its fields' labels are for screen readers. */
+	.selector-row :global(.field > span:first-child) {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip: rect(0 0 0 0);
+	}
+
+	.selector-head {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-8);
+	}
+
+	.reading {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--space-8);
+		font-family: var(--font-mono);
+		font-size: var(--fs-11);
+		color: var(--color-decode);
 	}
 
 	.select {
@@ -699,9 +743,16 @@
 	}
 
 	.custom {
+		flex: 1 1 200px;
+		min-width: 0;
 		display: flex;
-		align-items: flex-end;
+		align-items: center;
 		gap: var(--space-8);
+	}
+
+	.custom :global(.field) {
+		flex: 1;
+		min-width: 0;
 	}
 
 	.bottom {

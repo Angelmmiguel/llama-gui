@@ -615,3 +615,54 @@ test('saving a loaded profile reloads it, even if the router already stopped it'
 		await demo.stop();
 	}
 });
+
+test('Builds shows it is reading releases, and takes a tag under other', async ({ page }) => {
+	const release = (tag: string, channel: string) => ({
+		tag,
+		channel,
+		binary_tag: tag,
+		published_at: '2026-11-01T00:00:00Z',
+		options: []
+	});
+	let done: () => void = () => {};
+	const held = new Promise<void>((resolve) => (done = resolve));
+	const asked: string[] = [];
+	await page.route('**/api/v1/builds/available*', async (route) => {
+		const url = new URL(route.request().url());
+		asked.push(url.search);
+		const version = url.searchParams.get('version');
+		if (version) {
+			return route.fulfill({ json: { releases: [release(version, 'nightly')] } });
+		}
+		await held;
+		const channel = url.searchParams.get('channel') ?? 'stable';
+		await route.fulfill({
+			json: { releases: [release(channel === 'stable' ? 'v0.9.0' : 'b12144', channel)] }
+		});
+	});
+
+	await page.goto(`${server.url}/ui/builds`);
+	await expect(page.getByText('Reading releases from GitHub…')).toBeVisible();
+	done();
+	await expect(page.getByText('Reading releases from GitHub…')).toHaveCount(0);
+	expect(asked.some((q) => q.includes('channel=nightly') && q.includes('limit=25'))).toBe(true);
+
+	const source = page.getByRole('group', { name: 'Channel' });
+	await expect(page.getByLabel('Tag')).toHaveCount(0);
+	await expect(page.getByLabel('Release')).toBeVisible();
+
+	await source.getByRole('button', { name: 'other' }).click();
+	await expect(page.getByLabel('Release')).toHaveCount(0);
+	await page.getByLabel('Tag').fill('b8105');
+	await page.getByRole('button', { name: 'Use', exact: true }).click();
+	await expect(page.locator('main').getByText('b8105').first()).toBeVisible();
+	await expect(source.getByRole('button', { name: 'other' })).toHaveAttribute(
+		'aria-pressed',
+		'true'
+	);
+	await expect(page.getByLabel('Tag')).toHaveValue('b8105');
+
+	await source.getByRole('button', { name: 'stable' }).click();
+	await expect(page.getByLabel('Tag')).toHaveCount(0);
+	await expect(page.getByLabel('Release')).toBeVisible();
+});
