@@ -490,6 +490,21 @@ export interface ChartData {
 	spark: { prefill: number[]; ttft: number[]; rpm: number[]; kv: number[] };
 }
 
+const wave = (length: number, scale: number, phase: number) =>
+	Array.from({ length }, (_, i) => scale * (1 + Math.sin(i / 5 + phase)));
+
+/** Only ever shown blurred, behind the message to load a model, so its numbers mean nothing. */
+export const PLACEHOLDER_CHART: ChartData = {
+	decode: wave(60, 40, 0),
+	peak: 80,
+	spark: {
+		prefill: wave(30, 500, 1),
+		ttft: wave(30, 300, 2),
+		rpm: wave(30, 4, 3),
+		kv: wave(30, 0.3, 4)
+	}
+};
+
 /** The same shape from either source, so the page draws one chart. */
 export function chartData(
 	range: ChartRange,

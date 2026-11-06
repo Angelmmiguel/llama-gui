@@ -7,6 +7,7 @@ import type {
 	TelemetryModel
 } from '$lib/api/client';
 import {
+	PLACEHOLDER_CHART,
 	acceptanceLabel,
 	speculationName,
 	chartData,
@@ -377,5 +378,13 @@ describe('speculation', () => {
 	it('gives the share kept, from a real run', () => {
 		expect(acceptanceLabel(7639, 9952)).toBe('77%');
 		expect(acceptanceLabel(0, 0)).toBeUndefined();
+	});
+});
+
+describe('the placeholder chart', () => {
+	it('has the shape of a real one, so the blurred page looks right', () => {
+		expect(PLACEHOLDER_CHART.decode).toHaveLength(60);
+		expect(Math.max(...PLACEHOLDER_CHART.decode)).toBeLessThanOrEqual(PLACEHOLDER_CHART.peak);
+		expect(PLACEHOLDER_CHART.spark.kv.every((v) => v >= 0 && v <= 1)).toBe(true);
 	});
 });

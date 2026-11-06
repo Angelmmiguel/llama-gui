@@ -289,7 +289,9 @@ test('with no model in memory a fresh Overview shows only what to do next', asyn
 	await page.goto(`${server.url}/ui/`);
 	await expect(page.getByRole('heading', { name: 'No model is loaded' })).toBeVisible();
 	await expect(page.getByRole('heading', { name: 'READY ON YOUR DISK' })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Load a model first' })).toBeVisible();
 	await expect(page.getByRole('heading', { name: /DECODE THROUGHPUT/ })).toBeHidden();
+	await expect(page.locator('main .bands')).toHaveAttribute('inert');
 	await expect(page.getByRole('heading', { name: /MODELS IN MEMORY/ })).toBeHidden();
 	await expect(page.getByRole('group', { name: 'Chart range' })).toBeHidden();
 });

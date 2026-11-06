@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import {
 		getLibraryLocal,
 		getTelemetryHistory,
@@ -23,6 +24,7 @@
 	import SectionHeading from '$lib/components/SectionHeading.svelte';
 	import Segmented from '$lib/components/Segmented.svelte';
 	import StatTile from '$lib/components/StatTile.svelte';
+	import TextLink from '$lib/components/TextLink.svelte';
 	import { tones } from '$lib/components/tones';
 	import { formatInt, formatMs, formatTokens } from '$lib/format';
 	import LogTail from '$lib/monitor/LogTail.svelte';
@@ -31,6 +33,7 @@
 		allSlots,
 		CHART_RANGES,
 		chartData,
+		PLACEHOLDER_CHART,
 		backendLabel,
 		busiestProfile,
 		gpuSummary,
@@ -123,7 +126,9 @@
 
 	// Waits for its range's history before switching, so changing range never blanks the chart.
 	const shown = $derived(history && history.range === range ? history.points : null);
-	const chart = $derived(chartData(shown ? range : '1m', snap?.series, shown));
+	const chart = $derived(
+		showBands ? chartData(shown ? range : '1m', snap?.series, shown) : PLACEHOLDER_CHART
+	);
 	const chartRange = $derived(
 		CHART_RANGES.find((r) => r.value === (shown ? range : '1m')) ?? CHART_RANGES[0]
 	);
@@ -295,61 +300,126 @@
 		/>
 	{/if}
 
-	{#if showBands}
-		<Band>
-			<Panel flex="2 1 560px" gap={14} aria-labelledby="decode-heading">
-				<SectionHeading
-					id="decode-heading"
-					title="DECODE THROUGHPUT · ALL SLOTS"
-					note={chartRange.note}
-					align="baseline"
-				/>
-				<div class="hero">
-					<Metric
-						value={routerUp ? snap.throughput.decode.toFixed(1) : '—'}
-						unit="tok/s"
-						size={56}
-						unitSize={14}
+	<div class="bands-wrap">
+		<div class="bands" class:locked={!showBands} inert={!showBands} aria-hidden={!showBands}>
+			<Band>
+				<Panel flex="2 1 560px" gap={14} aria-labelledby="decode-heading">
+					<SectionHeading
+						id="decode-heading"
+						title="DECODE THROUGHPUT · ALL SLOTS"
+						note={chartRange.note}
+						align="baseline"
 					/>
-					{#if routerUp}
-						<span class="summary">avg {decodeAvg.toFixed(1)} · peak {decodePeak.toFixed(1)}</span>
-					{/if}
-				</div>
-				<LineChart
-					series={[{ data: decode, area: true, endDot: true, color: tones.decode }]}
-					label="Decode tokens per second, {chartRange.note}"
-					max={decodeTop}
-					{yLabels}
-					xLabels={chartRange.ticks}
-				/>
-			</Panel>
-			<Band layout="grid" columns={2} nested flex="1 1 380px">
-				{#each tiles as t (t.label)}
-					<StatTile {...t} />
-				{/each}
+					<div class="hero">
+						<Metric
+							value={routerUp ? snap.throughput.decode.toFixed(1) : '—'}
+							unit="tok/s"
+							size={56}
+							unitSize={14}
+						/>
+						{#if routerUp}
+							<span class="summary">avg {decodeAvg.toFixed(1)} · peak {decodePeak.toFixed(1)}</span>
+						{/if}
+					</div>
+					<LineChart
+						series={[{ data: decode, area: true, endDot: true, color: tones.decode }]}
+						label="Decode tokens per second, {chartRange.note}"
+						max={decodeTop}
+						{yLabels}
+						xLabels={chartRange.ticks}
+					/>
+				</Panel>
+				<Band layout="grid" columns={2} nested flex="1 1 380px">
+					{#each tiles as t (t.label)}
+						<StatTile {...t} />
+					{/each}
+				</Band>
 			</Band>
-		</Band>
 
-		<Band>
-			<SlotBars {slots} empty={slotsEmpty} />
-			<MemoryPanel
-				gpus={snap.gpus}
-				ram={snap.ram}
-				models={snap.models}
-				tensorSplit={tensorSplitLabel(busiest)}
-			/>
-		</Band>
+			<Band>
+				<SlotBars {slots} empty={slotsEmpty} />
+				<MemoryPanel
+					gpus={snap.gpus}
+					ram={snap.ram}
+					models={snap.models}
+					tensorSplit={tensorSplitLabel(busiest)}
+				/>
+			</Band>
 
-		<Waterfall {rows} />
+			<Waterfall {rows} />
 
-		<Band>
-			<ProfileSummary profile={busiest} />
-			<LogTail live={telemetry.live} />
-		</Band>
-	{/if}
+			<Band>
+				<ProfileSummary profile={busiest} />
+				<LogTail live={telemetry.live} />
+			</Band>
+		</div>
+		{#if !showBands}
+			<div class="overlay">
+				<div class="overlay-card">
+					<h2>Load a model first</h2>
+					<p>Throughput, slots and memory show here once a model is running.</p>
+					<TextLink href={resolve('/library')}>Find one in the Library →</TextLink>
+				</div>
+			</div>
+		{/if}
+	</div>
 {/if}
 
 <style>
+	.bands-wrap {
+		position: relative;
+	}
+
+	.bands {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-16);
+	}
+
+	.locked {
+		filter: blur(4px);
+		opacity: 0.5;
+		user-select: none;
+		pointer-events: none;
+	}
+
+	.overlay {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		justify-content: center;
+		align-items: flex-start;
+		padding-top: 120px;
+		pointer-events: none;
+	}
+
+	.overlay-card {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: var(--space-8);
+		max-width: 420px;
+		padding: var(--space-20) var(--space-24);
+		background: var(--bg-panel);
+		border: 1px solid var(--border-control);
+		border-radius: var(--radius-7);
+		text-align: center;
+		pointer-events: auto;
+	}
+
+	.overlay-card h2 {
+		margin: 0;
+		font-size: var(--fs-16);
+		font-weight: 600;
+	}
+
+	.overlay-card p {
+		margin: 0;
+		font-size: var(--fs-13);
+		line-height: 1.5;
+		color: var(--fg-tertiary);
+	}
+
 	.hero {
 		display: flex;
 		flex-wrap: wrap;
