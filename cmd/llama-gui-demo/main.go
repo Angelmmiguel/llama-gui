@@ -36,7 +36,7 @@ case "$*" in
     u0=$(( $(date +%s) % 40 + 45 )); u1=$(( $(date +%s) % 30 + 20 ))
     echo "0, NVIDIA GeForce RTX 4090, GPU-demo-0, 575.64, 24564, 19010, $u0, 71"
     echo "1, NVIDIA GeForce RTX 4090, GPU-demo-1, 575.64, 24564, 17522, $u1, 64" ;;
-  *) echo "| NVIDIA-SMI 575.64    Driver Version: 575.64    CUDA Version: 12.8 |" ;;
+  *) echo "<nvidia_smi_log><cuda_version>12.8</cuda_version></nvidia_smi_log>" ;;
 esac
 `
 

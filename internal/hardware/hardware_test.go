@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -15,10 +16,14 @@ const smiCSV = `0, NVIDIA GeForce RTX 4090, GPU-aaaa, 550.54.14, 24564, 1024, 37
 1, Tesla, Inc. K80, GPU-bbbb, 550.54.14, [N/A], [N/A], [Not Supported], [N/A]
 `
 
-const smiHeader = `Wed Nov  5 10:00:00 2026
-+-----------------------------------------------------------------------------------------+
-| NVIDIA-SMI 550.54.14              Driver Version: 550.54.14      CUDA Version: 12.4     |
-|-----------------------------------------+------------------------+----------------------+
+const smiReport = `<?xml version="1.0" ?>
+<!DOCTYPE nvidia_smi_log SYSTEM "nvsmi_device_v12.dtd">
+<nvidia_smi_log>
+	<timestamp>Wed Nov  5 10:00:00 2026</timestamp>
+	<driver_version>550.54.14</driver_version>
+	<cuda_version>12.4</cuda_version>
+	<attached_gpus>1</attached_gpus>
+</nvidia_smi_log>
 `
 
 const cpuinfo = `processor	: 0
@@ -62,8 +67,8 @@ func writeRoot(t *testing.T, files map[string]string) string {
 }
 
 func smi(ctx context.Context, name string, args ...string) ([]byte, error) {
-	if len(args) == 0 {
-		return []byte(smiHeader), nil
+	if slices.Contains(args, "-x") {
+		return []byte(smiReport), nil
 	}
 	return []byte(smiCSV), nil
 }
@@ -123,6 +128,34 @@ func TestDetect(t *testing.T) {
 	}
 	if RecommendBackend(s) != BackendCUDA {
 		t.Errorf("recommend = %s", RecommendBackend(s))
+	}
+}
+
+func TestCUDAVersionReport(t *testing.T) {
+	for name, tc := range map[string]struct{ report, want string }{
+		"older driver": {smiReport, "12.4"},
+		"both fields, the deprecated one stale": {`<nvidia_smi_log>
+	<!-- cuda_version is deprecated and will be removed in CUDA 14.0; use cuda_umd_version instead -->
+	<cuda_version>13.0</cuda_version>
+	<cuda_umd_version>13.4</cuda_umd_version>
+</nvidia_smi_log>`, "13.4"},
+		"only the new field":     {`<nvidia_smi_log><cuda_umd_version>14.1</cuda_umd_version></nvidia_smi_log>`, "14.1"},
+		"not a version":          {`<nvidia_smi_log><cuda_umd_version>N/A</cuda_umd_version><cuda_version>12.8</cuda_version></nvidia_smi_log>`, "12.8"},
+		"malformed further down": {`<nvidia_smi_log><cuda_umd_version>13.4</cuda_umd_version><gpu><bad`, "13.4"},
+		"no field":               {`<nvidia_smi_log></nvidia_smi_log>`, ""},
+		"not XML":                {`Failed to initialize NVML`, ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			d := Detector{Run: func(_ context.Context, _ string, args ...string) ([]byte, error) {
+				if want := []string{"-q", "-x"}; !reflect.DeepEqual(args, want) {
+					t.Errorf("args = %v, want %v", args, want)
+				}
+				return []byte(tc.report), nil
+			}}
+			if got := d.cudaVersion(t.Context()); got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 

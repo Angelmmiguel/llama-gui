@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"os"
@@ -220,17 +221,30 @@ func mebibytes(v string) *uint64 {
 	return &n
 }
 
-var cudaVersionRE = regexp.MustCompile(`CUDA Version:\s*(\d+(?:\.\d+)*)`)
+var cudaVersionRE = regexp.MustCompile(`^\d+(?:\.\d+)*$`)
 
+// cudaVersion reads the XML report, whose fields have a published DTD, unlike the summary table
+// and --version, which both changed their labels. cuda_version is deprecated and goes away in
+// CUDA 14, but older drivers only have that one.
 func (d *Detector) cudaVersion(ctx context.Context) string {
 	ctx, cancel := context.WithTimeout(ctx, commandTimeout)
 	defer cancel()
-	out, err := d.Run(ctx, "nvidia-smi")
+	out, err := d.Run(ctx, "nvidia-smi", "-q", "-x")
 	if err != nil {
 		return ""
 	}
-	if m := cudaVersionRE.FindSubmatch(out); m != nil {
-		return string(m[1])
+	var report struct {
+		UMD    string `xml:"cuda_umd_version"`
+		Legacy string `xml:"cuda_version"`
+	}
+	dec := xml.NewDecoder(bytes.NewReader(out))
+	dec.Strict = false
+	// These fields come first, so a malformed value further down the report does not matter.
+	_ = dec.Decode(&report)
+	for _, v := range []string{report.UMD, report.Legacy} {
+		if v = strings.TrimSpace(v); cudaVersionRE.MatchString(v) {
+			return v
+		}
 	}
 	return ""
 }
