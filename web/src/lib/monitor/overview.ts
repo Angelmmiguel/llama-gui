@@ -5,13 +5,12 @@ import type {
 	MemoryDevice,
 	Profile,
 	RequestRecord,
-	RouterModel,
 	Slot,
 	TelemetryModel,
 	TelemetrySnapshot
 } from '$lib/api/client';
 import { tones } from '$lib/components/tones';
-import { formatBytes, formatDuration, formatTokens } from '$lib/format';
+import { formatTokens } from '$lib/format';
 
 const GiB = 1024 ** 3;
 
@@ -437,61 +436,7 @@ export function clock(iso: string): string {
 	return d.toLocaleTimeString('en-GB', { hour12: false });
 }
 
-export interface ModelMetaInput {
-	model: TelemetryModel;
-	/** The router's own entry, with estimates for a model that is not loaded. */
-	estimate?: RouterModel;
-	profile?: Profile;
-	gpus: readonly Gpu[];
-	/** Seconds since this model's last finished request, when one is recent. */
-	lastRequestAgo?: number;
-}
-
 /** The mono line under a router model's name. */
-export function modelMeta({
-	model,
-	estimate,
-	profile,
-	gpus,
-	lastRequestAgo
-}: ModelMetaInput): string {
-	const parts: string[] = [];
-	if (model.status === 'loaded') {
-		if (model.memory.total > 0) parts.push(formatBytes(model.memory.total));
-	} else {
-		const devices = estimate?.memory.max.devices ?? [];
-		const bytes = devices.reduce((sum, d) => sum + d.model + d.context + d.compute, 0);
-		if (bytes > 0) {
-			parts.push(`~${formatBytes(bytes)}`);
-			const fits = gpus.find(
-				(g) =>
-					g.memory_total !== null &&
-					g.memory_used !== null &&
-					g.memory_total - g.memory_used >= bytes
-			);
-			if (fits) parts.push(`would fit on GPU ${fits.index}`);
-		}
-	}
-	if (profile) parts.push(`ctx ${formatTokens(profile.ctx_size)}`);
-	if (profile?.ngl) parts.push(`ngl ${profile.ngl}`);
-	const gpuCount = model.memory.devices.filter((d) => deviceIndex(d) !== null).length;
-	if (gpuCount > 1) parts.push(`split ${gpuCount} GPUs`);
-	if (model.status === 'loaded' && lastRequestAgo !== undefined) {
-		parts.push(`last request ${formatDuration(lastRequestAgo)} ago`);
-	}
-	if (estimate?.failed) parts.push(`failed, exit ${estimate.exit_code ?? '?'}`);
-	return parts.join(' · ');
-}
-
-/** Loaded models first, largest on top, so the list reads like the memory panel. */
-export function sortedModels(models: readonly TelemetryModel[]): TelemetryModel[] {
-	return models.toSorted(
-		(a, b) =>
-			Number(b.status === 'loaded') - Number(a.status === 'loaded') ||
-			b.memory.total - a.memory.total ||
-			a.id.localeCompare(b.id)
-	);
-}
 
 /** The chart ranges. `1m` is the live stream, and the others come from the stored history. */
 export const CHART_RANGES = [

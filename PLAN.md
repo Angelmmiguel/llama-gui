@@ -294,7 +294,7 @@ Order keeps a usable product at each step: M3 is already a working managed llama
 - [x] `just test`, `just lint` and `just fmt` clean; `just web-e2e` for screen changes
 - [x] A fake `llama-server` test binary replays recorded `/slots`, `/metrics`, `/models` and logs, so tests need no GPU
 - [ ] Parser fixtures from at least the oldest supported and the newest build (only `b12132` so far)
-- [ ] Overview's Load section sits oddly at the bottom of the page: waiting on a design update
+- [x] Model dock at the top of the Overview, with its Load model drawer and empty panel
 
 ### Found testing on a real GPU (RTX 3060, driver 615)
 

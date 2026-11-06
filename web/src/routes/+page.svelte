@@ -1,10 +1,12 @@
 <script lang="ts">
 	import {
+		getLibraryLocal,
 		getTelemetryHistory,
 		listModels,
 		listProfiles,
 		listRequests,
 		startServer,
+		type LocalModel,
 		type Profile,
 		type RequestRecord,
 		type TelemetryHistory,
@@ -37,10 +39,11 @@
 		waterfallRows,
 		type ChartRange
 	} from '$lib/monitor/overview';
+	import { isResident } from '$lib/monitor/dock';
 	import GettingStarted from '$lib/monitor/GettingStarted.svelte';
 	import { errorText, every } from '$lib/monitor/poll';
 	import ProfileSummary from '$lib/monitor/ProfileSummary.svelte';
-	import RouterModels from '$lib/monitor/RouterModels.svelte';
+	import ModelDock from '$lib/monitor/ModelDock.svelte';
 	import SlotBars from '$lib/monitor/SlotBars.svelte';
 	import Waterfall from '$lib/monitor/Waterfall.svelte';
 	import { server } from '$lib/state/server.svelte';
@@ -56,6 +59,10 @@
 	let recent = $state.raw<RequestRecord[]>([]);
 	let profiles = $state.raw<Profile[]>([]);
 	let estimates = $state.raw<RouterModel[]>([]);
+	let local = $state.raw<LocalModel[] | null>(null);
+	let headroom = $state(0);
+	// A fresh start shows only what to do next, but charts stay up once a model has been unloaded.
+	let everLoaded = $state(false);
 	let range = $state<ChartRange>('1m');
 	let history = $state.raw<TelemetryHistory | null>(null);
 	let startError = $state('');
@@ -76,13 +83,18 @@
 	$effect(() => {
 		if (!telemetry.live) return;
 		return every(CONFIG_MS, async (signal) => {
-			const [p, m] = await Promise.all([
+			const [p, m, l] = await Promise.all([
 				listProfiles().catch(() => null),
-				listModels().catch(() => null)
+				listModels().catch(() => null),
+				getLibraryLocal({}, signal).catch(() => null)
 			]);
 			if (signal.aborted) return;
 			if (p) profiles = p;
 			if (m) estimates = m;
+			if (l) {
+				local = l.models;
+				headroom = l.hardware.headroom_bytes;
+			}
 		});
 	});
 
@@ -91,6 +103,11 @@
 	const noBuild = $derived(server.status !== null && !server.status.active_build);
 	const routerState = $derived(snap?.server.state ?? server.state);
 	const routerUp = $derived(routerState === 'running');
+	const anyResident = $derived(snap?.models.some((m) => isResident(m.status)) ?? false);
+	$effect(() => {
+		if (anyResident) everLoaded = true;
+	});
+	const showBands = $derived(!routerUp || anyResident || everLoaded);
 
 	const subtitle = $derived.by(() => {
 		if (!snap) return undefined;
@@ -137,14 +154,6 @@
 
 	const nowMs = $derived(snap ? Date.parse(snap.time) : 0);
 	const rows = $derived(snap ? waterfallRows(snap.in_flight, recent, snap.models, nowMs) : []);
-	// Newest first from the API, so reversing lets the newest win.
-	const lastRequest = $derived(
-		new Map(
-			recent
-				.toReversed()
-				.map((r) => [r.model, Math.max(0, (nowMs - Date.parse(r.started_at) - r.total_ms) / 1000)])
-		)
-	);
 
 	const downReason = $derived.by(() => {
 		switch (routerState) {
@@ -170,13 +179,8 @@
 				? { title: 'No models', detail: 'Add a profile to give the router a model to load.' }
 				: {
 						title: 'No models loaded',
-						detail: 'Load a model below and its slots appear here.'
+						detail: 'Load a model above and its slots appear here.'
 					}
-	);
-	const modelsEmpty = $derived(
-		!routerUp
-			? downReason
-			: { title: 'No models', detail: 'Add a profile or download a model from the Library.' }
 	);
 
 	const tiles = $derived.by(() => {
@@ -246,7 +250,9 @@
 
 <PageHeader title="Overview" {subtitle}>
 	{#snippet actions()}
-		<Segmented label="Chart range" options={CHART_RANGES} bind:value={range} />
+		{#if showBands}
+			<Segmented label="Chart range" options={CHART_RANGES} bind:value={range} />
+		{/if}
 		<LiveToggle bind:live={telemetry.live} />
 	{/snippet}
 </PageHeader>
@@ -276,65 +282,71 @@
 		</Panel>
 	{/if}
 
-	<Band>
-		<Panel flex="2 1 560px" gap={14} aria-labelledby="decode-heading">
-			<SectionHeading
-				id="decode-heading"
-				title="DECODE THROUGHPUT · ALL SLOTS"
-				note={chartRange.note}
-				align="baseline"
-			/>
-			<div class="hero">
-				<Metric
-					value={routerUp ? snap.throughput.decode.toFixed(1) : '—'}
-					unit="tok/s"
-					size={56}
-					unitSize={14}
-				/>
-				{#if routerUp}
-					<span class="summary">avg {decodeAvg.toFixed(1)} · peak {decodePeak.toFixed(1)}</span>
-				{/if}
-			</div>
-			<LineChart
-				series={[{ data: decode, area: true, endDot: true, color: tones.decode }]}
-				label="Decode tokens per second, {chartRange.note}"
-				max={decodeTop}
-				{yLabels}
-				xLabels={chartRange.ticks}
-			/>
-		</Panel>
-		<Band layout="grid" columns={2} nested flex="1 1 380px">
-			{#each tiles as t (t.label)}
-				<StatTile {...t} />
-			{/each}
-		</Band>
-	</Band>
-
-	<Band>
-		<SlotBars {slots} empty={slotsEmpty} />
-		<MemoryPanel
-			gpus={snap.gpus}
-			ram={snap.ram}
-			models={snap.models}
-			tensorSplit={tensorSplitLabel(busiest)}
-		/>
-	</Band>
-
-	<Waterfall {rows} />
-
-	<Band>
-		<RouterModels
+	{#if routerUp}
+		<ModelDock
 			models={snap.models}
 			{estimates}
 			{profiles}
+			{local}
 			gpus={snap.gpus}
-			{lastRequest}
-			empty={modelsEmpty}
+			ramAvailable={snap.ram.available}
+			{headroom}
 			canAct={routerUp}
 		/>
-		<ProfileSummary profile={busiest} />
-		<LogTail live={telemetry.live} />
-	</Band>
+	{/if}
+
+	{#if showBands}
+		<Band>
+			<Panel flex="2 1 560px" gap={14} aria-labelledby="decode-heading">
+				<SectionHeading
+					id="decode-heading"
+					title="DECODE THROUGHPUT · ALL SLOTS"
+					note={chartRange.note}
+					align="baseline"
+				/>
+				<div class="hero">
+					<Metric
+						value={routerUp ? snap.throughput.decode.toFixed(1) : '—'}
+						unit="tok/s"
+						size={56}
+						unitSize={14}
+					/>
+					{#if routerUp}
+						<span class="summary">avg {decodeAvg.toFixed(1)} · peak {decodePeak.toFixed(1)}</span>
+					{/if}
+				</div>
+				<LineChart
+					series={[{ data: decode, area: true, endDot: true, color: tones.decode }]}
+					label="Decode tokens per second, {chartRange.note}"
+					max={decodeTop}
+					{yLabels}
+					xLabels={chartRange.ticks}
+				/>
+			</Panel>
+			<Band layout="grid" columns={2} nested flex="1 1 380px">
+				{#each tiles as t (t.label)}
+					<StatTile {...t} />
+				{/each}
+			</Band>
+		</Band>
+
+		<Band>
+			<SlotBars {slots} empty={slotsEmpty} />
+			<MemoryPanel
+				gpus={snap.gpus}
+				ram={snap.ram}
+				models={snap.models}
+				tensorSplit={tensorSplitLabel(busiest)}
+			/>
+		</Band>
+
+		<Waterfall {rows} />
+
+		<Band>
+			<ProfileSummary profile={busiest} />
+			<LogTail live={telemetry.live} />
+		</Band>
+	{/if}
 {/if}
 
 <style>

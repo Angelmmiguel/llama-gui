@@ -16,7 +16,6 @@ import {
 	gpuSummary,
 	logMessage,
 	memoryLane,
-	modelMeta,
 	niceMax,
 	padSeries,
 	prefillPercent,
@@ -310,46 +309,6 @@ describe('profiles', () => {
 		expect(quantOf('nomic-embed-text-v1.5.f16.gguf')).toBe('F16');
 		expect(quantOf('model.gguf')).toBeUndefined();
 		expect(quantOf(undefined)).toBeUndefined();
-	});
-});
-
-describe('modelMeta', () => {
-	const gpu = {
-		index: 1,
-		name: 'g',
-		uuid: '',
-		driver_version: '',
-		utilization: null,
-		temperature: null,
-		memory_total: 24 * GiB,
-		memory_used: 4 * GiB
-	};
-	const device = { kind: 'device', name: 'CUDA0', model: 2 * GiB, context: GiB, compute: GiB };
-	const none = { n_ctx: 0, devices: null };
-
-	it('describes a loaded model', () => {
-		expect(
-			modelMeta({
-				model: model({
-					memory: { total: 4 * GiB, devices: [device, { ...device, name: 'CUDA1' }] }
-				}),
-				profile: { id: 'p', name: 'p', alias: 'm', model_file: 'f', ctx_size: 65536, ngl: '99' },
-				gpus: [],
-				lastRequestAgo: 31
-			})
-		).toBe('4.0 GB · ctx 65.5k · ngl 99 · split 2 GPUs · last request 31 s ago');
-	});
-
-	it('estimates an unloaded model and says where it fits', () => {
-		const estimate = {
-			id: 'm',
-			status: 'unloaded',
-			memory: { min: none, max: { n_ctx: 1, devices: [device] }, effective: none }
-		};
-		expect(modelMeta({ model: model({ status: 'unloaded' }), estimate, gpus: [gpu] })).toBe(
-			'~4.0 GB · would fit on GPU 1'
-		);
-		expect(modelMeta({ model: model({ status: 'unloaded' }), gpus: [gpu] })).toBe('');
 	});
 });
 

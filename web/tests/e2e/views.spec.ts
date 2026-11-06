@@ -219,7 +219,13 @@ test('a Library search loads more results', async ({ page }) => {
 	await expect(page.getByRole('button', { name: 'Load more' })).toHaveCount(0);
 });
 
-test('the Overview chart switches range without losing the page', async ({ page }) => {
+test('the Overview chart switches range without losing the page', async ({ page, request }) => {
+	// Without a model in memory a fresh Overview has no charts to show.
+	await request.post(`${server.url}/api/v1/models/qwen3-coder/load`);
+	await expect(async () => {
+		const status = await (await request.get(`${server.url}/api/v1/status`)).json();
+		expect(status.models_loaded).toBeGreaterThan(0);
+	}).toPass({ timeout: 30_000 });
 	await open(page, '/', 'Overview');
 	const heading = page.getByRole('heading', { name: /DECODE THROUGHPUT/ });
 	const panel = page.getByRole('region', { name: /DECODE THROUGHPUT/ });
@@ -236,4 +242,53 @@ test('the Overview chart switches range without losing the page', async ({ page 
 
 	await page.getByRole('button', { name: '1m', exact: true }).click();
 	await expect(panel.getByText('last 60 s')).toBeVisible();
+});
+
+test('models load, swap and unload from the dock at the top of the Overview', async ({ page }) => {
+	const demo = await startDemo();
+	try {
+		await page.goto(`${demo.url}/ui/`);
+		const dock = page.getByRole('region', { name: /MODELS IN MEMORY/ });
+		await expect(dock.getByRole('heading', { name: 'MODELS IN MEMORY · 3' })).toBeVisible();
+
+		const drawerButton = dock.getByRole('button', { name: 'Load model' });
+		await expect(drawerButton).toHaveAttribute('aria-expanded', 'false');
+		await drawerButton.click();
+		await expect(dock.getByRole('heading', { name: 'ON YOUR DISK · NOT LOADED' })).toBeVisible();
+		await dock
+			.getByRole('button', { name: /^(Load|Swap & load)$/ })
+			.first()
+			.click();
+		await expect(dock.getByRole('heading', { name: 'ON YOUR DISK · NOT LOADED' })).toBeHidden();
+		await expect(dock.getByRole('heading', { name: /MODELS IN MEMORY · [34]/ })).toBeVisible();
+
+		const unload = dock.getByRole('button', { name: /^Unload / }).first();
+		const name = (await unload.getAttribute('aria-label')) ?? '';
+		await unload.click();
+		await expect(dock.getByRole('button', { name, exact: true })).toBeHidden({ timeout: 20_000 });
+	} finally {
+		await demo.stop();
+	}
+});
+
+test('with no model in memory a fresh Overview shows only what to do next', async ({ page }) => {
+	// The demo's traffic loads models on demand, so a settled state has to come from a snapshot.
+	const snapshot = await (await page.request.get(`${server.url}/api/v1/telemetry`)).json();
+	for (const m of snapshot.models) {
+		m.status = 'unloaded';
+		m.slots = [];
+		m.memory = { total: 0, devices: [] };
+	}
+	await page.route('**/api/v1/telemetry/stream', (route) =>
+		route.fulfill({
+			contentType: 'text/event-stream',
+			body: `data: ${JSON.stringify(snapshot)}\n\n`
+		})
+	);
+	await page.goto(`${server.url}/ui/`);
+	await expect(page.getByRole('heading', { name: 'No model is loaded' })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'READY ON YOUR DISK' })).toBeVisible();
+	await expect(page.getByRole('heading', { name: /DECODE THROUGHPUT/ })).toBeHidden();
+	await expect(page.getByRole('heading', { name: /MODELS IN MEMORY/ })).toBeHidden();
+	await expect(page.getByRole('group', { name: 'Chart range' })).toBeHidden();
 });
