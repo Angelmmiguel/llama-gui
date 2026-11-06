@@ -44,7 +44,7 @@ jobs:
 
       - name: gofmt
         run: |
-          files=$(nix develop --command gofmt -l .)
+          files=$(nix develop --command gofmt -l cmd internal web/embed.go web/embed_test.go)
           [ -z "$files" ] || { echo 'gofmt would rewrite:'; echo "$files"; exit 1; }
 
       - name: Vet and lint

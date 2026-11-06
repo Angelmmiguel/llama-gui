@@ -31,7 +31,7 @@ just build    # pnpm build, then go build with the web app embedded
 just web-e2e  # Playwright specs against the built app
 ```
 
-`just test` and `just lint` must be clean before work is considered done, along with `gofmt -l .`
+`just test` and `just lint` must be clean before work is considered done, along with `just fmt`
 printing nothing. Web-only variants exist as `web-install`, `web-dev`, `web-check`, `web-test` and
 `web-build`.
 

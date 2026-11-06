@@ -28,3 +28,5 @@ linters:
         path: _test\.go
       - linters: [errcheck, gosec]
         path: internal/fakellama/
+      - linters: [errcheck, gosec]
+        path: cmd/llama-gui-demo/

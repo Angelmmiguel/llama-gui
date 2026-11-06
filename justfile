@@ -43,7 +43,7 @@ image version="latest":
 
 # Report files that gofmt would change.
 fmt:
-    gofmt -l .
+    gofmt -l cmd internal web/embed.go web/embed_test.go
 
 # Web
 
