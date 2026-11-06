@@ -45,6 +45,7 @@
 	import { errorText, every } from '$lib/monitor/poll';
 	import DownloadsPanel from './DownloadsPanel.svelte';
 	import FitBar from './FitBar.svelte';
+	import JobPanel from './JobPanel.svelte';
 	import ModelRow from './ModelRow.svelte';
 	import {
 		bestVariant,
@@ -57,8 +58,12 @@
 		fitTotal,
 		headroomLabel,
 		hubProblem,
+		isActive,
 		isHostOnly,
-		jobPercent,
+		jobView,
+		loadView,
+		localModelFor,
+		trackedJob,
 		KV_OPTIONS,
 		localAction,
 		localDescription,
@@ -84,6 +89,9 @@
 	const FIT_DEBOUNCE_MS = 250;
 	const QUERY_DEBOUNCE_MS = 400;
 	const LOOKUPS_AT_ONCE = 3;
+	// A quick answer just moves the bars: only a slow one earns the skeleton.
+	const SKELETON_AFTER_MS = 200;
+	const FRESH_MS = 4000;
 
 	const WHY: Record<string, string> = {
 		largest_dense: 'LARGEST DENSE MODEL THAT FITS',
@@ -108,6 +116,9 @@
 	let localError = $state('');
 	let suggestions = $state<LibrarySuggestion[] | null>(null);
 	let suggestionsError = $state('');
+	let suggestionsSlow = $state(false);
+	let suggestionsFresh = $state(false);
+	let tracked = $state.raw<ReadonlySet<string>>(new Set());
 	let hub = $state.raw<{ source: string; results: RepoRow[]; next: string } | null>(null);
 	let hubLoadingMore = $state(false);
 	// Per repo and variant, as read from the headers.
@@ -228,16 +239,30 @@
 		const params = fitQuery;
 		const controller = new AbortController();
 		suggestionsError = '';
+		suggestionsFresh = false;
+		const slow = setTimeout(() => (suggestionsSlow = true), SKELETON_AFTER_MS);
+		let fresh: ReturnType<typeof setTimeout> | undefined;
 		getLibrarySuggestions(params, controller.signal).then(
 			(res) => {
+				clearTimeout(slow);
 				suggestions = res.suggestions;
 				suggestionsError = '';
+				suggestionsSlow = false;
+				suggestionsFresh = true;
+				fresh = setTimeout(() => (suggestionsFresh = false), FRESH_MS);
 			},
 			(e: unknown) => {
-				if (!controller.signal.aborted) suggestionsError = errorText(e);
+				clearTimeout(slow);
+				if (controller.signal.aborted) return;
+				suggestionsSlow = false;
+				suggestionsError = errorText(e);
 			}
 		);
-		return () => controller.abort();
+		return () => {
+			clearTimeout(slow);
+			clearTimeout(fresh);
+			controller.abort();
+		};
 	});
 
 	$effect(() => {
@@ -338,6 +363,7 @@
 				const list = await listDownloads(signal);
 				if (signal.aborted) return;
 				jobs = list;
+				track(list);
 				const done = list.filter((j) => j.state === 'done').map((j) => j.id);
 				if (known && done.some((id) => !known?.has(id))) refreshFiles();
 				known = new Set(done);
@@ -346,6 +372,16 @@
 			}
 		});
 	});
+
+	/** Follows what is running now, so finished jobs from earlier visits don't fill the page. */
+	function track(list: readonly DownloadJob[]) {
+		const running = list.filter((j) => isActive(j) && !tracked.has(j.id));
+		if (running.length > 0) tracked = new Set([...tracked, ...running.map((j) => j.id)]);
+	}
+
+	function forget(job: DownloadJob) {
+		tracked = new Set([...tracked].filter((id) => id !== job.id));
+	}
 
 	function refreshFiles() {
 		void fetchLocal({ ctx: appliedCtx, kv: appliedKv });
@@ -373,6 +409,7 @@
 		await act(`dl:${repo}:${files[0]}`, () => startDownload(repo, files));
 		try {
 			jobs = await listDownloads();
+			track(jobs);
 		} catch {
 			// The poll catches up.
 		}
@@ -432,12 +469,38 @@
 	block: boolean
 )}
 	{@const state = downloadState(repo, files, jobs, local ?? [])}
-	{#if state.kind === 'on-disk'}
-		<Button variant="ghost" {size} {block} disabled>On disk</Button>
+	{@const model = localModelFor(files, local ?? [])}
+	{#if state.kind === 'on-disk' && model}
+		{@const action = localAction(model)}
+		{#if action.kind === 'profile'}
+			<Button
+				variant="ghost"
+				tone="accent"
+				{size}
+				{block}
+				href={`${resolve('/profiles')}?new=${encodeURIComponent(action.path)}`}
+				title="Create a profile, which is what makes this model loadable"
+			>
+				Create profile
+			</Button>
+		{:else if action.kind === 'load'}
+			<Button
+				variant="ghost"
+				tone="accent"
+				{size}
+				{block}
+				disabled={busy[`model:${model.path}`]}
+				onclick={() => routerAction(model, 'load', action.id)}
+			>
+				Load
+			</Button>
+		{:else if action.kind === 'busy'}
+			<Button variant="ghost" {size} {block} disabled>Loading</Button>
+		{:else}
+			<Button variant="ghost" {size} {block} disabled>Loaded ✓</Button>
+		{/if}
 	{:else if state.kind === 'active'}
-		<Button variant="ghost" {size} {block} disabled>
-			{state.job.state === 'queued' ? 'Queued' : `${jobPercent(state.job)}%`}
-		</Button>
+		<Button variant="ghost" {size} {block} onclick={() => cancel(state.job)}>Cancel</Button>
 	{:else}
 		<Button
 			variant="ghost"
@@ -449,6 +512,49 @@
 		>
 			{label}
 		</Button>
+	{/if}
+{/snippet}
+
+{#snippet progress(repo: string, files: readonly string[], name: string, cancellable: boolean)}
+	{@const job = trackedJob(repo, files, jobs, tracked)}
+	{@const model = localModelFor(files, local ?? [])}
+	{#if model?.status === 'loading'}
+		<JobPanel view={loadView(model)} label="Loading {name}" />
+	{:else if job}
+		<JobPanel view={jobView(job)} label="Downloading {name}">
+			{#snippet actions()}
+				{#if isActive(job)}
+					{#if cancellable}
+						<Button variant="ghost" size="xs" onclick={() => cancel(job)}>Cancel</Button>
+					{/if}
+				{:else}
+					{#if job.state === 'done' && model}
+						{@const action = localAction(model)}
+						{#if action.kind === 'load'}
+							<Button
+								variant="primary"
+								size="xs"
+								onclick={() => {
+									forget(job);
+									void routerAction(model, 'load', action.id);
+								}}
+							>
+								Load now
+							</Button>
+						{:else if action.kind === 'profile'}
+							<Button
+								variant="primary"
+								size="xs"
+								href={`${resolve('/profiles')}?new=${encodeURIComponent(action.path)}`}
+							>
+								Create profile
+							</Button>
+						{/if}
+					{/if}
+					<Button variant="ghost" size="xs" onclick={() => forget(job)}>Dismiss</Button>
+				{/if}
+			{/snippet}
+		</JobPanel>
 	{/if}
 {/snippet}
 
@@ -518,6 +624,9 @@
 				{/if}
 			</span>
 		</div>
+		{#if m.status === 'loading'}
+			<JobPanel view={loadView(m)} label="Loading {m.name}" />
+		{/if}
 		<div class="foot">
 			{#if confirming === m.path}
 				<span class="hint" role="alert">
@@ -613,6 +722,7 @@
 					<span class="variant-action">
 						{@render downloadButton(r.repo, v.download_files, 'Download', 'sm', true)}
 					</span>
+					{@render progress(r.repo, v.download_files, `${r.name} ${v.quant}`, false)}
 				</div>
 			{/each}
 			<span class="hint">{repoHint(r, disk?.path ?? '')}</span>
@@ -680,13 +790,34 @@
 		align="baseline"
 	>
 		{#snippet actions()}
-			<span class="dim small">Updates when you change context or KV cache type</span>
+			{#if !suggestions || suggestionsSlow}
+				<span class="status checking">
+					<Spinner size={10} />Checking the starter catalog at {ctxLabel} · {appliedKv}…
+				</span>
+			{:else if suggestionsFresh}
+				<span class="status fresh">Updated just now</span>
+			{:else}
+				<span class="dim small">Updates when you change context or KV cache type</span>
+			{/if}
 		{/snippet}
 	</SectionHeading>
 	{#if suggestionsError}
 		{@render alert(hubProblem(suggestionsError))}
-	{:else if !suggestions}
-		{@render loading('Checking the starter catalog on Hugging Face')}
+	{:else if !suggestions || suggestionsSlow}
+		<div aria-busy="true" aria-label="Finding suggestions">
+			<Band layout="grid" min={300}>
+				{#each [0, 0.15, 0.3] as delay (delay)}
+					<div class="card skeleton" style:--delay="{delay}s">
+						<span class="shimmer" style:height="10px" style:width="52%"></span>
+						<span class="shimmer" style:height="18px" style:width="72%"></span>
+						<span class="shimmer" style:height="11px" style:width="44%"></span>
+						<span class="shimmer" style:height="12px"></span>
+						<span class="shimmer" style:height="34px"></span>
+						<span class="shimmer push" style:height="38px"></span>
+					</div>
+				{/each}
+			</Band>
+		</div>
 	{:else if suggestions.length === 0}
 		<Panel>
 			<EmptyState
@@ -696,8 +827,8 @@
 		</Panel>
 	{:else}
 		<Band layout="grid" min={300}>
-			{#each suggestions as s (s.category)}
-				<article class="card">
+			{#each suggestions as s, i (s.category)}
+				<article class="card rise" style:animation-delay="{i * 90}ms">
 					<Eyebrow color={tones.decode}>{WHY[s.category] ?? s.category.toUpperCase()}</Eyebrow>
 					<div class="card-title">
 						<h3>{s.name}</h3>
@@ -706,13 +837,16 @@
 					<FitBar fit={s.fit} {scale} height={12} />
 					<p class="description">{s.note}</p>
 					<div class="card-action">
-						{@render downloadButton(
-							s.repo,
-							s.download_files,
-							`Download ${s.quant} · ${formatBytes(s.download_bytes)}`,
-							'ml',
-							true
-						)}
+						{@render progress(s.repo, s.download_files, s.name, true)}
+						{#if !trackedJob(s.repo, s.download_files, jobs, tracked) && localModelFor(s.download_files, local ?? [])?.status !== 'loading'}
+							{@render downloadButton(
+								s.repo,
+								s.download_files,
+								`Download ${s.quant} · ${formatBytes(s.download_bytes)}`,
+								'ml',
+								true
+							)}
+						{/if}
 					</div>
 				</article>
 			{/each}
@@ -917,7 +1051,58 @@
 		gap: var(--space-10);
 	}
 
+	.status {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--space-8);
+		font-family: var(--font-mono);
+		font-size: var(--fs-11);
+	}
+
+	.checking {
+		color: var(--color-decode);
+	}
+
+	.fresh {
+		color: var(--color-ok);
+	}
+
+	.shimmer {
+		display: block;
+		border-radius: var(--radius-3);
+		background: linear-gradient(
+			90deg,
+			var(--border-row) 35%,
+			var(--border-ghost) 50%,
+			var(--border-row) 65%
+		);
+		background-size: 300% 100%;
+		animation: shimmer 1.4s ease-in-out infinite;
+		animation-delay: var(--delay);
+	}
+
+	.push {
+		margin-top: auto;
+	}
+
+	@keyframes shimmer {
+		from {
+			background-position: 200% 0;
+		}
+		to {
+			background-position: -200% 0;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.shimmer {
+			animation: none;
+		}
+	}
+
 	.card {
+		min-height: 246px;
+		box-sizing: border-box;
 		background: var(--bg-panel);
 		padding: var(--space-18) var(--space-20);
 		display: flex;

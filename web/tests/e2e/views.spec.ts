@@ -335,3 +335,61 @@ test('a Library row tags the quants that have MTP heads', async ({ page }) => {
 	).toBeVisible();
 	await expect(main.getByText(/--spec-type draft-mtp/)).toBeVisible();
 });
+
+test('Library suggestions show a skeleton only when slow, and a download shows its progress', async ({
+	page
+}) => {
+	const G = 1024 ** 3;
+	const suggestion = {
+		category: 'largest_dense',
+		repo: 'u/fast',
+		name: 'fast-model',
+		quant: 'Q8_0',
+		fit: { total_bytes: G, verdict: 'fits_gpu', weights_bytes: G, kv_bytes: 0, compute_bytes: 0 },
+		tags: [],
+		note: 'A note.',
+		metadata: { architecture: 'qwen', param_count: 1000 },
+		download_files: ['fast-Q8_0.gguf'],
+		download_bytes: G
+	};
+	let release: () => void = () => {};
+	const held = new Promise<void>((done) => (release = done));
+	await page.route('**/api/v1/library/suggestions*', async (route) => {
+		await held;
+		await route.fulfill({ json: { suggestions: [suggestion], hardware: {} } });
+	});
+	const running = {
+		id: 'job1',
+		repo: 'u/fast',
+		variant: 'Q8_0',
+		files: ['fast-Q8_0.gguf'],
+		state: 'downloading',
+		done: G / 2,
+		total: G,
+		bytes_per_sec: 80 * 1024 * 1024,
+		eta_seconds: 7
+	};
+	let jobs: unknown[] = [];
+	await page.route('**/api/v1/library/downloads*', async (route) => {
+		if (route.request().method() === 'POST') {
+			jobs = [running];
+			return route.fulfill({ status: 202, json: running });
+		}
+		await route.fulfill({ json: { jobs } });
+	});
+
+	await open(page, '/library', 'Library');
+	const suggestions = page.getByRole('region', { name: /SUGGESTED FOR THIS MACHINE/ });
+	await expect(suggestions.getByLabel('Finding suggestions')).toBeVisible();
+	await expect(suggestions.getByText(/Checking the starter catalog/)).toBeVisible();
+
+	release();
+	await expect(suggestions.getByRole('heading', { name: 'fast-model' })).toBeVisible();
+	await expect(suggestions.getByLabel('Finding suggestions')).toHaveCount(0);
+	await expect(suggestions.getByText('Updated just now')).toBeVisible();
+
+	await suggestions.getByRole('button', { name: /^Download Q8_0/ }).click();
+	await expect(suggestions.getByRole('progressbar', { name: /fast-model: 50%/ })).toBeVisible();
+	await expect(suggestions.getByText(/50% · 7 s left/)).toBeVisible();
+	await expect(suggestions.getByRole('button', { name: 'Cancel' })).toBeVisible();
+});

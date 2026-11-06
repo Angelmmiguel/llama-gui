@@ -9,7 +9,7 @@ import type {
 } from '$lib/api/client';
 import type { BarSegment } from '$lib/components/StackedBar.svelte';
 import { tones } from '$lib/components/tones';
-import { formatBytes, formatGB } from '$lib/format';
+import { formatBytes, formatDuration, formatGB } from '$lib/format';
 
 export const CTX_OPTIONS = [
 	{ value: 8192, label: '8k' },
@@ -325,4 +325,108 @@ export function hubProblem(message: string): string {
 
 export function headroomLabel(hw: LibraryHardware | null): string {
 	return hw ? `${formatBytes(hw.headroom_bytes, 0)} headroom kept free.` : '';
+}
+
+/** The local model made from these downloaded files, if it is on disk. */
+export function localModelFor(
+	files: readonly string[],
+	local: readonly LocalModel[]
+): LocalModel | undefined {
+	const main = files.find((f) => !isMMProj(f)) ?? files[0];
+	if (main === undefined) return undefined;
+	const name = baseName(main);
+	return local.find((m) => m.files.includes(name));
+}
+
+/** The newest job for these files among those being followed. */
+export function trackedJob(
+	repo: string,
+	files: readonly string[],
+	jobs: readonly DownloadJob[],
+	tracked: ReadonlySet<string>
+): DownloadJob | undefined {
+	const main = files.find((f) => !isMMProj(f)) ?? files[0];
+	return jobs.findLast(
+		(j) => tracked.has(j.id) && j.repo === repo && j.files.includes(main) && j.state !== 'canceled'
+	);
+}
+
+export interface JobStep {
+	label: string;
+	state: 'done' | 'now' | 'later';
+}
+
+export interface JobView {
+	icon: 'spin' | 'done' | 'failed';
+	stage: string;
+	right: string;
+	percent: number;
+	/** `cells` when there is no progress to count. */
+	bar: 'progress' | 'cells' | 'none';
+	steps: JobStep[];
+}
+
+const steps = (labels: readonly string[], now: number): JobStep[] =>
+	labels.map((label, i) => ({
+		label,
+		state: i < now ? 'done' : i === now ? 'now' : 'later'
+	}));
+
+const DOWNLOAD_STEPS = ['queued', 'download', 'saved'];
+
+export function jobView(job: DownloadJob): JobView {
+	const percent = jobPercent(job);
+	switch (job.state) {
+		case 'queued':
+			return {
+				icon: 'spin',
+				stage: 'Waiting for its turn',
+				right: job.total > 0 ? formatBytes(job.total) : '',
+				percent: 0,
+				bar: 'progress',
+				steps: steps(DOWNLOAD_STEPS, 0)
+			};
+		case 'downloading': {
+			const speed = job.bytes_per_sec > 0 ? ` · ${formatBytes(job.bytes_per_sec)}/s` : '';
+			const left = job.eta_seconds > 0 ? ` · ${formatDuration(job.eta_seconds)} left` : '';
+			return {
+				icon: 'spin',
+				stage: `${formatBytes(job.done)} / ${formatBytes(job.total)}${speed}`,
+				right: `${percent}%${left}`,
+				percent,
+				bar: 'progress',
+				steps: steps(DOWNLOAD_STEPS, 1)
+			};
+		}
+		case 'done':
+			return {
+				icon: 'done',
+				stage: `Saved · ${formatBytes(job.total)}`,
+				right: 'done',
+				percent: 100,
+				bar: 'progress',
+				steps: steps(DOWNLOAD_STEPS, 3)
+			};
+		default:
+			return {
+				icon: 'failed',
+				stage: job.error || `The download ended: ${job.state}`,
+				right: '',
+				percent,
+				bar: 'none',
+				steps: []
+			};
+	}
+}
+
+/** llama.cpp reports no progress while loading, so this says what is happening and not how far. */
+export function loadView(m: LocalModel): JobView {
+	return {
+		icon: 'spin',
+		stage: `Loading weights · ${formatBytes(m.size_bytes)}`,
+		right: 'no progress reported',
+		percent: 0,
+		bar: 'cells',
+		steps: []
+	};
 }

@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { DownloadJob, GgufMetadata, LibraryFit, LocalModel } from '$lib/api/client';
 import {
 	displayTags,
+	jobView,
+	loadView,
+	localModelFor,
+	trackedJob,
 	downloadState,
 	fitScale,
 	fitSegments,
@@ -234,5 +238,68 @@ describe('matchesFilter', () => {
 		};
 		expect(matchesFilter({ ...row, variants: [variant] }, 'fits')).toBe(true);
 		expect(matchesFilter({ ...row, tags: ['moe'] }, 'moe')).toBe(true);
+	});
+});
+
+describe('download and load panels', () => {
+	const job = (over: Partial<DownloadJob>): DownloadJob => ({
+		id: 'a',
+		repo: 'u/m',
+		variant: 'Q8_0',
+		files: ['m-Q8_0.gguf', 'mmproj.gguf'],
+		state: 'downloading',
+		done: 512,
+		total: 1024,
+		bytes_per_sec: 256,
+		eta_seconds: 2,
+		...over
+	});
+
+	it('shows real progress while downloading', () => {
+		const v = jobView(job({}));
+		expect(v).toMatchObject({ icon: 'spin', percent: 50, bar: 'progress' });
+		expect(v.stage).toContain('256 B/s');
+		expect(v.right).toContain('50%');
+		expect(v.steps.map((s) => s.state)).toEqual(['done', 'now', 'later']);
+	});
+
+	it('says when it waits, finishes or fails', () => {
+		expect(jobView(job({ state: 'queued' })).steps[0].state).toBe('now');
+		const done = jobView(job({ state: 'done', done: 1024 }));
+		expect(done).toMatchObject({ icon: 'done', percent: 100 });
+		expect(done.steps.every((s) => s.state === 'done')).toBe(true);
+		const failed = jobView(job({ state: 'failed', error: 'disk full' }));
+		expect(failed).toMatchObject({ icon: 'failed', stage: 'disk full', bar: 'none' });
+	});
+
+	it('copes with a state it does not know', () => {
+		expect(jobView(job({ state: 'paused' })).stage).toContain('paused');
+	});
+
+	it('never claims progress for a load, which upstream does not report', () => {
+		const v = loadView({ size_bytes: 1024 } as LocalModel);
+		expect(v.bar).toBe('cells');
+		expect(v.right).toBe('no progress reported');
+	});
+
+	it('follows only the jobs it was asked to, skipping the projector', () => {
+		const jobs = [job({ id: 'old', state: 'done' }), job({ id: 'new' })];
+		const files = ['mmproj.gguf', 'm-Q8_0.gguf'];
+		expect(trackedJob('u/m', files, jobs, new Set(['new']))?.id).toBe('new');
+		expect(trackedJob('u/m', files, jobs, new Set())).toBeUndefined();
+		expect(trackedJob('u/other', files, jobs, new Set(['new']))).toBeUndefined();
+	});
+
+	it('forgets a cancelled job', () => {
+		expect(trackedJob('u/m', ['m-Q8_0.gguf'], [job({ state: 'canceled' })], new Set(['a']))).toBe(
+			undefined
+		);
+	});
+
+	it('finds the model a download became', () => {
+		const m = { files: ['m-Q8_0.gguf'] } as LocalModel;
+		expect(localModelFor(['dir/m-Q8_0.gguf'], [m])).toBe(m);
+		expect(localModelFor(['other.gguf'], [m])).toBeUndefined();
+		expect(localModelFor([], [m])).toBeUndefined();
 	});
 });

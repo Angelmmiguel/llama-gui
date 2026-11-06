@@ -23,6 +23,7 @@
 	<StackedBar
 		segments={fitSegments(fit, scale)}
 		{height}
+		transition="width 0.5s ease"
 		marker={scale?.marker}
 		label={`${total}: ${verdict}`}
 	/>
