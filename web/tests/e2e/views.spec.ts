@@ -547,3 +547,22 @@ test('the Playground offers reasoning effort only when the template takes it, an
 	await chat.getByText(/Thought for/).click();
 	await expect(thinking).toBeVisible();
 });
+
+test('Bench compares two profiles', async ({ page }) => {
+	test.setTimeout(120_000);
+	const demo = await startDemo();
+	try {
+		await page.goto(`${demo.url}/ui/bench`);
+		const panel = page.getByRole('region', { name: 'COMPARE TWO PROFILES' });
+		await panel.getByLabel('First').selectOption('gemma-3-12b');
+		await panel.getByLabel('Then').selectOption('nomic-embed');
+		await panel.getByLabel('Max tokens').fill('8');
+		await panel.getByRole('button', { name: 'Compare' }).click();
+		await expect(panel.getByRole('cell', { name: 'gemma-3-12b' })).toBeVisible({ timeout: 90_000 });
+		await expect(panel.getByRole('cell', { name: 'nomic-embed' })).toBeVisible();
+		await expect(panel.getByText(/on this prompt|same speed/)).toBeVisible();
+		await expect(panel.getByRole('button', { name: 'Compare' })).toBeEnabled({ timeout: 30_000 });
+	} finally {
+		await demo.stop();
+	}
+});

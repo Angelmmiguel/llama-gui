@@ -38,6 +38,7 @@
 	import { tones } from '$lib/components/tones';
 	import { errorText, every } from '$lib/monitor/poll';
 	import { server } from '$lib/state/server.svelte';
+	import ProfileCompare from './ProfileCompare.svelte';
 	import {
 		agoText,
 		decodeChart,
@@ -615,6 +616,8 @@
 		</Panel>
 	</div>
 </Columns>
+
+<ProfileCompare />
 
 <style>
 	.note {

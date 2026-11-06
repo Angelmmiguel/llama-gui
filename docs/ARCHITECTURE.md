@@ -132,6 +132,8 @@ The proxy decides on-demand loading per request: the router runs with `--no-mode
   never looks installed. The active build's id is in `kv`, and losing `/builds` only means re-downloading.
 - `/models`: GGUF files in the router's layout (a file, or a directory for multimodal and shards).
 - `/data/preset.ini`: rendered from `profiles`, atomically, on every change. `/data/slots/`: slot saves.
+- Speculative decoding: `--spec-type` is per model and can't be changed per request. `speculative.types` and `speculative.n_max` in a request had no effect on `b12132`, and `llama-bench` has no such flags, so comparing means loading the model twice. A reply's `timings` has `draft_n` and `draft_n_accepted`, `/metrics` has `spec_decode_*`, and a slot has `speculative` and `params["speculative.types"]`.
+- `/library/repo` and `/library/suggestions` match local files by name and size in `local_path`, as repos reuse file names for different builds. A download whose name is taken by a different file goes to `<stem>--<user>-<repo>/`.
 - Profile extra arguments can never name a file or a remote source, or turn on what reaches beyond the model (`--tools`, `--agent`, MCP, RPC, `--connect`). The router expands short names in a preset (`md` is `--model-draft`), so every alias is reserved; a test checks this against the captured `--help`. `LLAMA_GUI_LLAMA_ARGS` is the operator's own and is not limited.
 
 ## Lifecycle
