@@ -261,7 +261,22 @@ export type FlagField = keyof typeof FLAGS;
 export function unsupportedFields(flags: readonly string[] | null | undefined): Set<FlagField> {
 	if (!flags || flags.length === 0) return new Set();
 	const known = new Set(flags);
-	return new Set((Object.keys(FLAGS) as FlagField[]).filter((f) => !known.has(FLAGS[f])));
+	return new Set(
+		(Object.keys(FLAGS) as FlagField[]).filter(
+			(f) => !known.has(FLAGS[f]) && !(f === 'mlock' && known.has(LOAD_MODE))
+		)
+	);
+}
+
+/** Newer builds moved `--mlock` into `--load-mode`. The API picks the same one for the preset. */
+const LOAD_MODE = '--load-mode';
+const LOCKING_LOAD_MODES = new Set(['mlock', 'mmap+mlock']);
+
+/** How the active build spells the setting, to show next to its switch. */
+export function mlockFlag(flags: readonly string[] | null | undefined): string {
+	return flags?.includes(LOAD_MODE) && !flags.includes(FLAGS.mlock)
+		? `${LOAD_MODE} mmap+mlock`
+		: FLAGS.mlock;
 }
 
 /** A name that passes the alias rule, from a model's file name. */
@@ -557,6 +572,10 @@ export function parseCommandLine(line: string): ImportResult {
 		} else if (name === '-fa' || name === '--flash-attn') {
 			// Older builds took it as a bare switch.
 			patch.flashAttn = next() ?? 'on';
+		} else if (name === '-lm' || name === LOAD_MODE) {
+			const value = next();
+			if (value !== undefined && LOCKING_LOAD_MODES.has(value)) patch.mlock = true;
+			else extra.push(...(value === undefined ? [name] : [name, value]));
 		} else if (name in valued) {
 			const value = next();
 			if (value === undefined) notes.push(`${name} had no value`);

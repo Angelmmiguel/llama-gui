@@ -19,6 +19,7 @@ import {
 	resolveModelPath,
 	tokenize,
 	toProfile,
+	mlockFlag,
 	unsupportedFields
 } from './view';
 
@@ -159,6 +160,19 @@ describe('build support', () => {
 		expect(got.has('ctx')).toBe(false);
 		expect(got.has('jinja')).toBe(false);
 		expect(got.has('cacheReuse')).toBe(true);
+	});
+
+	it('finds keeping weights in RAM under either flag', () => {
+		expect(unsupportedFields(['--ctx-size']).has('mlock')).toBe(true);
+		expect(unsupportedFields(['--mlock']).has('mlock')).toBe(false);
+		expect(unsupportedFields(['--load-mode']).has('mlock')).toBe(false);
+	});
+
+	it('names the flag the build uses for keeping weights in RAM', () => {
+		expect(mlockFlag(['--load-mode'])).toBe('--load-mode mmap+mlock');
+		expect(mlockFlag(['--mlock'])).toBe('--mlock');
+		expect(mlockFlag(['--mlock', '--load-mode'])).toBe('--mlock');
+		expect(mlockFlag(null)).toBe('--mlock');
 	});
 });
 
@@ -324,6 +338,9 @@ describe('parseCommandLine', () => {
 			[]
 		],
 		['bare -fa', '-fa --mlock', { flashAttn: 'on', mlock: true }, []],
+		['load mode that locks', '--load-mode mmap+mlock', { mlock: true }, []],
+		['short load mode that locks', '-lm mlock', { mlock: true }, []],
+		['load mode that does not lock', '--load-mode dio', {}, ['--load-mode', 'dio']],
 		['jinja', '--jinja', { jinja: true }, []],
 		['no jinja', '--no-jinja', { jinja: false }, []],
 		['batching', '-b 2048 -ub 512 -t 16', { batch: '2048', ubatch: '512', threads: '16' }, []],

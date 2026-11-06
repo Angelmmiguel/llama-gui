@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -134,7 +135,7 @@ ctx-size = 4096
 
 func TestRenderPresetSkips(t *testing.T) {
 	p := fullProfile()
-	got, skipped := RenderPreset([]Profile{p}, "/m", func(f string) bool { return f != "mlock" && f != "foo" && f != "load-on-startup" })
+	got, skipped := RenderPreset([]Profile{p}, "/m", func(f string) bool { return f != "mlock" && f != "load-mode" && f != "foo" && f != "load-on-startup" })
 	if strings.Contains(got, "mlock") || strings.Contains(got, "foo") {
 		t.Fatalf("not filtered:\n%s", got)
 	}
@@ -189,13 +190,13 @@ func TestCommand(t *testing.T) {
 		"  -m /models/d/m.gguf --mmproj /models/d/mm.gguf --alias full \\\n" +
 		"  -c 65536 -np 4 -ngl 48 -fa on \\\n" +
 		"  -ctk q8_0 -ctv q8_0 -sm layer -ts 4,1 --cache-reuse 256 -b 2048 -ub 512 -t 16 --temp 0.7 --top-p 0.8 --top-k 0 --min-p 0 --repeat-penalty 1.05 --jinja --mlock --foo bar --flag"
-	if got := Command(p, "/models"); got != want {
+	if got := Command(p, "/models", nil); got != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 	}
 	bare := valid()
 	bare.ModelFile = "my model.gguf"
 	want = "llama-server \\\n  -m '/m/my model.gguf' --alias qwen3-coder \\\n  -c 4096"
-	if got := Command(bare, "/m"); got != want {
+	if got := Command(bare, "/m", nil); got != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 	}
 }
@@ -288,7 +289,7 @@ func TestServiceSyncReportsSkipped(t *testing.T) {
 	if _, err := s.Create(ctx, p); err != nil {
 		t.Fatal(err)
 	}
-	s.SetSupported(func(f string) bool { return f != "mlock" })
+	s.SetSupported(func(f string) bool { return f != "mlock" && f != "load-mode" })
 	skipped, err := s.Sync(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -308,5 +309,31 @@ func TestReservedRejectsFileAndRemoteFlags(t *testing.T) {
 		if reserved(key) {
 			t.Errorf("reserved(%q) = true", key)
 		}
+	}
+}
+
+func TestMLockFollowsTheBuild(t *testing.T) {
+	p := Profile{Name: "m", Alias: "m", ModelFile: "m.gguf", CtxSize: 4096, MLock: true}
+	for name, tc := range map[string]struct {
+		flags                  []string
+		preset, command, avoid string
+	}{
+		"newer build": {[]string{"ctx-size", "load-mode"}, "load-mode = mmap+mlock\n", "--load-mode mmap+mlock", "mlock = 1"},
+		"older build": {[]string{"ctx-size", "mlock"}, "mlock = 1\n", "--mlock", "load-mode"},
+		"both":        {[]string{"ctx-size", "mlock", "load-mode"}, "mlock = 1\n", "--mlock", "load-mode"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			supported := func(f string) bool { return slices.Contains(tc.flags, f) }
+			got, skipped := RenderPreset([]Profile{p}, "/m", supported)
+			if !strings.Contains(got, tc.preset) || strings.Contains(got, tc.avoid) || len(skipped) != 0 {
+				t.Errorf("preset:\n%s\nskipped: %+v", got, skipped)
+			}
+			if cmd := Command(p, "/m", supported); !strings.Contains(cmd, tc.command) || strings.Contains(cmd, tc.avoid) {
+				t.Errorf("command: %s", cmd)
+			}
+		})
+	}
+	if _, skipped := RenderPreset([]Profile{p}, "/m", func(f string) bool { return f == "ctx-size" }); len(skipped) != 1 || skipped[0].Flag != "mlock" {
+		t.Errorf("a build with neither flag: skipped = %+v", skipped)
 	}
 }

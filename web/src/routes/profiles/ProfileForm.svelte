@@ -34,6 +34,8 @@
 		layers: number;
 		/** Settings the active build lacks. */
 		unsupported: Set<FlagField>;
+		/** How the active build spells keeping weights in RAM. */
+		lockFlag: string;
 		/** The active build's tag, for the notes. */
 		buildTag: string;
 		/** Nothing runs on a GPU here, so its section is switched off. */
@@ -47,6 +49,7 @@
 		local,
 		layers,
 		unsupported,
+		lockFlag,
 		buildTag,
 		cpuOnly,
 		extraError
@@ -132,7 +135,7 @@
 				/>
 			</FlagGate>
 			<FlagGate off={unsupported.has('mlock')} build={buildTag}>
-				<Switch label="Keep weights in RAM" flag="--mlock" bind:checked={form.mlock} />
+				<Switch label="Keep weights in RAM" flag={lockFlag} bind:checked={form.mlock} />
 			</FlagGate>
 		</div>
 	</Panel>

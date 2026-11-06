@@ -47,6 +47,7 @@
 		quantOf,
 		resolveModelPath,
 		toProfile,
+		mlockFlag,
 		unsupportedFields,
 		type Form
 	} from './view';
@@ -94,6 +95,7 @@
 	const activeBuild = $derived(builds.find((b) => b.id === activeId));
 	const buildTag = $derived(activeBuild?.tag ?? '');
 	const unsupported = $derived(unsupportedFields(activeBuild?.probe.flags));
+	const lockFlag = $derived(mlockFlag(activeBuild?.probe.flags));
 	const cpuOnly = $derived(
 		activeBuild?.backend === 'cpu' ||
 			(hardware !== null && hardware.gpus.length === 0 && hardware.render_nodes.length === 0)
@@ -435,7 +437,16 @@
 			</Panel>
 		</div>
 	{:else}
-		<ProfileForm bind:form {local} {layers} {unsupported} {buildTag} {cpuOnly} {extraError} />
+		<ProfileForm
+			bind:form
+			{local}
+			{layers}
+			{unsupported}
+			{lockFlag}
+			{buildTag}
+			{cpuOnly}
+			{extraError}
+		/>
 
 		<aside class="side" aria-label="What this profile does">
 			<MemoryCard {estimate} reason={estimateReason} ctk={form.ctk} ctv={form.ctv} />

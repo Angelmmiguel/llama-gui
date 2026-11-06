@@ -105,6 +105,9 @@ func RenderPreset(profiles []Profile, modelsDir string, supported func(flag stri
 		}
 		fmt.Fprintf(&b, "[%s]\n", p.Alias)
 		for _, e := range append(p.typedKVs(modelsDir), extra...) {
+			if e.key == "mlock" && usesLoadMode(supported) {
+				e = kv{"load-mode", mlockLoadMode}
+			}
 			if e.key != "model" && e.key != "load-on-startup" && supported != nil && !supported(e.key) {
 				skipped = append(skipped, Skipped{Alias: p.Alias, Flag: e.key, Reason: "not supported by this build"})
 				continue
@@ -114,6 +117,14 @@ func RenderPreset(profiles []Profile, modelsDir string, supported func(flag stri
 		b.WriteByte('\n')
 	}
 	return b.String(), skipped
+}
+
+// mlockLoadMode is what --mlock did: it locked the memory map, and mmap was the default.
+const mlockLoadMode = "mmap+mlock"
+
+// usesLoadMode says whether this build has replaced --mlock with --load-mode.
+func usesLoadMode(supported func(flag string) bool) bool {
+	return supported != nil && !supported("mlock") && supported("load-mode")
 }
 
 // WritePreset replaces the file at path atomically.
@@ -145,7 +156,7 @@ func WritePreset(path, content string) error {
 
 // Command renders the profile as the equivalent command line, for display. The
 // router builds the real one from the preset.
-func Command(p Profile, modelsDir string) string {
+func Command(p Profile, modelsDir string, supported func(flag string) bool) string {
 	var lines [][]string
 	first := []string{"-m", shellQuote(filepath.Join(modelsDir, p.ModelFile))}
 	if p.MMProj != "" {
@@ -206,7 +217,11 @@ func Command(p Profile, modelsDir string) string {
 		}
 	}
 	if p.MLock {
-		third = append(third, "--mlock")
+		if usesLoadMode(supported) {
+			third = append(third, "--load-mode", mlockLoadMode)
+		} else {
+			third = append(third, "--mlock")
+		}
 	}
 	for _, a := range p.ExtraArgs {
 		third = append(third, strings.Fields(a)...)

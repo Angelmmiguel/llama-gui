@@ -98,7 +98,11 @@ func (s *Service) IdlePolicy(alias string) (time.Duration, bool) {
 }
 
 // Command is the package-level Command with this service's models dir.
-func (s *Service) Command(p Profile) string { return Command(p, s.modelsDir) }
+func (s *Service) Command(p Profile) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return Command(p, s.modelsDir, s.supported)
+}
 
 func decode(row store.Profile) (Profile, error) {
 	var p Profile
