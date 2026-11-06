@@ -343,6 +343,10 @@ export function mtpWarning(
 	return 'This file has no MTP heads. Pick a quant tagged MTP in the Library.';
 }
 
+/** The router's answer to unloading a model it has already stopped. */
+export const isNotRunning = (e: unknown) =>
+	e instanceof Error && /model is not running/i.test(e.message);
+
 /** A name that passes the alias rule, from a model's file name. */
 export function aliasFromFile(file: string): string {
 	const base = file.split('/').pop() ?? '';

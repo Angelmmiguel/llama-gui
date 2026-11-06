@@ -49,6 +49,7 @@
 		resolveModelPath,
 		toProfile,
 		defaultCtx,
+		isNotRunning,
 		mlockFlag,
 		unsupportedFields,
 		type Form
@@ -294,7 +295,14 @@
 
 	async function unload(alias: string) {
 		phase = 'unloading';
-		await unloadModel(alias);
+		// Saving changed settings makes the router re-read its preset, which already unloads the
+		// model, so only what is still running needs asking. Saving nothing new leaves it running.
+		const list = await listModels();
+		if (list.some((m) => m.id === alias && m.status !== 'unloaded')) {
+			await unloadModel(alias).catch((e: unknown) => {
+				if (!isNotRunning(e)) throw e;
+			});
+		}
 		await waitForModel(alias, (m) => !m || m.status === 'unloaded');
 	}
 

@@ -21,6 +21,7 @@ import {
 	toProfile,
 	defaultCtx,
 	mlockFlag,
+	isNotRunning,
 	mtpWarning,
 	needsDraftModel,
 	specTypeOptions,
@@ -496,5 +497,13 @@ describe('speculative decoding', () => {
 			specDraftNgl: '99'
 		});
 		expect(notes[0]).toContain('draft.gguf');
+	});
+});
+
+describe('reloading after a save', () => {
+	it("recognises the router's answer for a model it already stopped", () => {
+		expect(isNotRunning(new Error('llama-server: status 400: model is not running'))).toBe(true);
+		expect(isNotRunning(new Error('llama-server: status 500: boom'))).toBe(false);
+		expect(isNotRunning('model is not running')).toBe(false);
 	});
 });

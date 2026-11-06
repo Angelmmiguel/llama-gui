@@ -566,3 +566,52 @@ test('Bench compares two profiles', async ({ page }) => {
 		await demo.stop();
 	}
 });
+
+test('saving a loaded profile reloads it, even if the router already stopped it', async ({
+	page
+}) => {
+	test.setTimeout(120_000);
+	const demo = await startDemo();
+	try {
+		// What a real router does: the save re-reads the preset, which unloads the changed model.
+		let saved = false;
+		await page.route('**/api/v1/profiles/*', async (route) => {
+			if (route.request().method() === 'PUT') saved = true;
+			await route.fallback();
+		});
+		await page.route('**/api/v1/models', async (route) => {
+			const res = await route.fetch();
+			const body = await res.json();
+			if (saved) {
+				for (const m of body.models)
+					if (m.id === 'qwen3-coder' && !loadedAgain) m.status = 'unloaded';
+			}
+			await route.fulfill({ response: res, json: body });
+		});
+		let loadedAgain = false;
+		let unloads = 0;
+		await page.route('**/api/v1/models/qwen3-coder/load', async (route) => {
+			loadedAgain = true;
+			await route.fulfill({ status: 202, json: { id: 'qwen3-coder' } });
+		});
+		await page.route('**/api/v1/models/qwen3-coder/unload', async (route) => {
+			unloads++;
+			await route.fulfill({
+				status: 400,
+				json: { error: 'llama-server: status 400: model is not running' }
+			});
+		});
+		await page.goto(`${demo.url}/ui/profiles`);
+		await page
+			.getByRole('button', { name: /qwen3-coder/ })
+			.first()
+			.click();
+		await page.getByLabel(/^Micro-batch/).fill('128');
+		await page.getByRole('button', { name: 'Save & reload model' }).click();
+		await expect(page.getByText(/Saved and reloaded/)).toBeVisible({ timeout: 30_000 });
+		await expect(page.getByText(/model is not running/)).toHaveCount(0);
+		expect(unloads).toBe(0);
+	} finally {
+		await demo.stop();
+	}
+});
