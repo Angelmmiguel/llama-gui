@@ -63,7 +63,7 @@ func (m *Manager) probe(ctx context.Context, dir string) (Probe, error) {
 	}
 	p.Router = slices.Contains(p.Flags, routerFlag)
 	if out, err := run("--list-devices"); err == nil {
-		p.Devices = parseDevices(out)
+		p.Devices = ParseDevices(out)
 	} else {
 		m.log.Warn("probe --list-devices failed", "dir", dir, "err", err)
 	}
@@ -126,7 +126,8 @@ func parseFlags(out []byte) []string {
 	return flags
 }
 
-func parseDevices(out []byte) []string {
+// ParseDevices reads the output of llama-server --list-devices.
+func ParseDevices(out []byte) []string {
 	_, list, ok := strings.Cut(string(out), "Available devices:")
 	if !ok {
 		return nil

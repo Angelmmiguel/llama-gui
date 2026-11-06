@@ -396,3 +396,27 @@ func TestDoctorRejectsBadConfig(t *testing.T) {
 		t.Errorf("%d %q", code, out)
 	}
 }
+
+func TestDoctorChecksThatAGPUBuildSeesAGPU(t *testing.T) {
+	for name, tc := range map[string]struct{ devices, want string }{
+		"sees it": {"  CUDA0: NVIDIA GeForce RTX 3060 (11962 MiB, 11849 MiB free)", "PASS  gpu devices  CUDA0: NVIDIA GeForce RTX 3060"},
+		"blind":   {"  (none)", "WARN  gpu devices  b1-cuda sees no GPU"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dirs, args := doctorEnv(t)
+			setActive(t, dirs.data, "b1-cuda")
+			bin := filepath.Join(dirs.builds, "b1-cuda", "llama-server")
+			if err := os.MkdirAll(filepath.Dir(bin), 0o750); err != nil {
+				t.Fatal(err)
+			}
+			script := "#!/bin/sh\nif [ \"$1\" = --list-devices ]; then printf 'Available devices:\\n" + tc.devices + "\\n'; else echo 'version: 1'; fi\n"
+			if err := os.WriteFile(bin, []byte(script), 0o700); err != nil { //nolint:gosec
+				t.Fatal(err)
+			}
+			code, out, _ := cli(t, args...)
+			if code != 0 || !strings.Contains(out, tc.want) {
+				t.Errorf("exit %d, want %q in:\n%s", code, tc.want, out)
+			}
+		})
+	}
+}

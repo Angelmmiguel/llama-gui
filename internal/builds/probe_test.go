@@ -36,7 +36,7 @@ func TestParseRealCaptures(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d := parseDevices(devices); len(d) != 0 {
+	if d := ParseDevices(devices); len(d) != 0 {
 		t.Errorf("devices = %q", d)
 	}
 }

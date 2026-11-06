@@ -199,6 +199,35 @@ func checkActiveBuild(ctx context.Context, r *report, cfg config.Config) {
 		return
 	}
 	r.pass("active build", "%s runs: %s", id, out)
+	checkBuildDevices(ctx, r, id, filepath.Join(cfg.Builds, id, "llama-server"))
+}
+
+// checkBuildDevices catches a GPU build that runs but sees no GPU: llama-server starts all the same
+// and quietly generates on the CPU, so nothing else would look wrong.
+func checkBuildDevices(ctx context.Context, r *report, id, bin string) {
+	if strings.HasSuffix(id, "-"+builds.BackendCPU) {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, doctorExecTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, bin, "--list-devices")
+	var out bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &out
+	cmd.WaitDelay = time.Second
+	err := reaper.Start(cmd)
+	if err == nil {
+		err = reaper.Wait(cmd)
+	}
+	if err != nil {
+		r.warn("gpu devices", "%s could not list its devices: %v", id, err)
+		return
+	}
+	devices := builds.ParseDevices(out.Bytes())
+	if len(devices) == 0 {
+		r.warn("gpu devices", "%s sees no GPU, so models will run on the CPU: check that the container has the GPU and its compute libraries", id)
+		return
+	}
+	r.pass("gpu devices", "%s", strings.Join(devices, "; "))
 }
 
 // runVersion runs --version, keeping the output for what it says about missing
