@@ -15,7 +15,14 @@ import {
 	localAction,
 	looksLikeRepo,
 	machineLabel,
+	bestForFit,
+	countFits,
+	fitMatches,
+	fitOptions,
+	localGroups,
 	matchesFilter,
+	matchesFit,
+	noFitHint,
 	orderJobs,
 	paramsLabel,
 	verdictLabel
@@ -224,21 +231,86 @@ describe('matchesFilter', () => {
 		catalog: false
 	};
 
-	it('needs a verdict before calling something a fit', () => {
+	const variant = (verdict: string, id = 'v') => ({
+		id,
+		quant: id,
+		files: [],
+		size_bytes: 1,
+		shards: 1,
+		fit: { ...fit(), verdict },
+		download_files: [],
+		download_bytes: 1
+	});
+
+	it('narrows by type', () => {
 		expect(matchesFilter(row, 'all')).toBe(true);
-		expect(matchesFilter(row, 'fits')).toBe(false);
-		const variant = {
-			id: 'v',
-			quant: 'Q8_0',
-			files: [],
-			size_bytes: 1,
-			shards: 1,
-			fit: fit(),
-			download_files: [],
-			download_bytes: 1
-		};
-		expect(matchesFilter({ ...row, variants: [variant] }, 'fits')).toBe(true);
+		expect(matchesFilter(row, 'moe')).toBe(false);
 		expect(matchesFilter({ ...row, tags: ['moe'] }, 'moe')).toBe(true);
+	});
+
+	it('keeps a row still being looked up, which has no verdict yet', () => {
+		expect(matchesFit(row, 'gpu')).toBe(true);
+		expect(matchesFit(row, 'large')).toBe(true);
+	});
+
+	it('matches a row with any quant in that fit', () => {
+		const both = { ...row, variants: [variant('fits_gpu', 'a'), variant('too_large', 'b')] };
+		expect(matchesFit(both, 'gpu')).toBe(true);
+		expect(matchesFit(both, 'large')).toBe(true);
+		expect(matchesFit(both, 'partial')).toBe(false);
+		expect(matchesFit(both, 'any')).toBe(true);
+	});
+
+	it('groups the verdicts, on a machine without a GPU too', () => {
+		expect(fitMatches(fit({ verdict: 'fits_ram' }), 'gpu')).toBe(true);
+		expect(fitMatches(fit({ verdict: 'offload_experts' }), 'partial')).toBe(true);
+		expect(fitMatches(fit({ verdict: 'from_the_future' }), 'gpu')).toBe(false);
+		expect(fitMatches(fit({ verdict: 'from_the_future' }), 'any')).toBe(true);
+		expect(fitOptions(true).map((o) => o.label)).toEqual(['Fits in RAM', 'Too large', 'Any']);
+		expect(fitOptions(false)[0].label).toBe('Fits on GPU');
+	});
+
+	it('counts what each choice would show', () => {
+		const rows = [
+			{ ...row, repo: 'a', variants: [variant('fits_gpu', 'x'), variant('too_large', 'y')] },
+			{ ...row, repo: 'b', variants: [variant('partial_offload')] },
+			row
+		];
+		expect(countFits(rows)).toEqual({ gpu: 1, partial: 1, large: 1, any: 3 });
+	});
+
+	it('leads with a quant that matches the filter', () => {
+		const r = {
+			...row,
+			best: 'big',
+			variants: [
+				variant('fits_gpu', 'small'),
+				variant('fits_gpu', 'mid'),
+				variant('too_large', 'big')
+			]
+		};
+		expect(bestForFit(r, 'any')?.id).toBe('big');
+		expect(bestForFit(r, 'large')?.id).toBe('big');
+		expect(bestForFit(r, 'gpu')?.id).toBe('mid');
+		expect(bestForFit(r, 'partial')).toBeUndefined();
+	});
+
+	it('says what to try when nothing matches', () => {
+		expect(noFitHint('gpu', 'chat', '32K', false)).toBe(
+			'No chat models fit on your GPUs at 32K context. Try a smaller context, a q8_0 KV cache or the Partial offload filter.'
+		);
+		expect(noFitHint('gpu', 'all', '8K', true)).toContain('No models fit in RAM');
+	});
+});
+
+describe('models on this machine', () => {
+	it('groups them, loaded first, and leaves out an empty group', () => {
+		const m = (path: string, status: string) => ({ path, status }) as LocalModel;
+		const groups = localGroups([m('a', 'unloaded'), m('b', 'loaded'), m('c', 'loading')]);
+		expect(groups.map((g) => g.title)).toEqual(['LOADED · 1', 'ON DISK · 2']);
+		expect(groups[0].rows[0].path).toBe('b');
+		expect(localGroups([m('a', 'unloaded')]).map((g) => g.title)).toEqual(['ON DISK · 1']);
+		expect(localGroups([])).toEqual([]);
 	});
 });
 

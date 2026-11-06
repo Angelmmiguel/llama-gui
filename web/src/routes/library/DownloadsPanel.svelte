@@ -12,15 +12,17 @@
 	interface Props {
 		jobs: readonly DownloadJob[];
 		oncancel: (job: DownloadJob) => void;
+		note?: string;
 	}
 
-	let { jobs, oncancel }: Props = $props();
+	let { jobs, oncancel, note }: Props = $props();
 
 	const shown = $derived(orderJobs(jobs));
+	const headingId = 'dl-h';
 </script>
 
-<Panel aria-labelledby="dl-h">
-	<SectionHeading title="DOWNLOADS" id="dl-h" />
+<Panel aria-labelledby={headingId}>
+	<SectionHeading title="DOWNLOADS" id={headingId} />
 	{#if shown.length === 0}
 		<EmptyState
 			title="Nothing downloading"
@@ -64,9 +66,15 @@
 			{/each}
 		</ul>
 	{/if}
+	{#if note}<span class="note">{note}</span>{/if}
 </Panel>
 
 <style>
+	.note {
+		font-size: var(--fs-12);
+		color: var(--fg-muted);
+	}
+
 	.jobs {
 		list-style: none;
 		margin: 0;

@@ -8,6 +8,8 @@
 		source: string;
 		tags: readonly string[];
 		loaded?: boolean;
+		/** Some quant of it is already downloaded. */
+		onDisk?: boolean;
 		params: string;
 		context?: string;
 		open: boolean;
@@ -22,6 +24,7 @@
 		source,
 		tags,
 		loaded = false,
+		onDisk = false,
 		params,
 		context,
 		open,
@@ -37,6 +40,7 @@
 			<span class="line">
 				<span class="name">{name}</span>
 				{#if loaded}<Tag tone="ok">LOADED</Tag>{/if}
+				{#if onDisk}<Tag tone="ok">ON YOUR MACHINE</Tag>{/if}
 			</span>
 			<span class="source">{source}</span>
 			{#if tags.length > 0}

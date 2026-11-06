@@ -31,6 +31,7 @@
 	import Eyebrow from '$lib/components/Eyebrow.svelte';
 	import Legend from '$lib/components/Legend.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import ScrollX from '$lib/components/ScrollX.svelte';
 	import Panel from '$lib/components/Panel.svelte';
 	import SearchField from '$lib/components/SearchField.svelte';
 	import SectionHeading from '$lib/components/SectionHeading.svelte';
@@ -43,12 +44,19 @@
 	import { tones } from '$lib/components/tones';
 	import { formatBytes } from '$lib/format';
 	import { errorText, every } from '$lib/monitor/poll';
+	import { playground as chat } from '$lib/state/playground.svelte';
 	import DownloadsPanel from './DownloadsPanel.svelte';
 	import FitBar from './FitBar.svelte';
 	import JobPanel from './JobPanel.svelte';
 	import ModelRow from './ModelRow.svelte';
 	import {
-		bestVariant,
+		bestForFit,
+		countFits,
+		fitMatches,
+		fitOptions,
+		localGroups,
+		matchesFit,
+		noFitHint,
 		contextLabel,
 		CTX_OPTIONS,
 		displayTags,
@@ -67,19 +75,18 @@
 		trackedJob,
 		KV_OPTIONS,
 		localAction,
-		localDescription,
 		looksLikeRepo,
 		machineLabel,
 		matchesFilter,
 		matchesLocal,
 		nativeContext,
 		paramsLabel,
-		profileLabel,
 		repoDescription,
 		repoHint,
 		serverFilter,
 		verdictColor,
 		verdictLabel,
+		type FitFilter,
 		type ListFilter
 	} from './view';
 
@@ -100,7 +107,8 @@
 		most_capable_offload: 'MOST CAPABLE WITH OFFLOAD'
 	};
 
-	let tab = $state<'local' | 'hub'>('hub');
+	let tab = $state<'local' | 'hub'>('local');
+	let fitFilter = $state<FitFilter>('gpu');
 	let query = $state('');
 	let filter = $state<ListFilter>('all');
 	let ctx = $state<number>(DEFAULT_CTX);
@@ -136,7 +144,7 @@
 	let disk = $state<LibraryDisk | null>(null);
 	let diskError = $state('');
 
-	let expanded = $state<{ local?: string | null; hub?: string | null }>({});
+	let expanded = $state<{ hub?: string | null }>({});
 	let busy = $state<Record<string, boolean>>({});
 	let notice = $state<{ text: string; failed: boolean } | null>(null);
 	let confirming = $state<string | null>(null);
@@ -151,17 +159,17 @@
 	const searching = $derived(hubAnswered !== hubKey(query.trim(), apiFilter));
 
 	const localRows = $derived((local ?? []).filter((m) => matchesLocal(m, query)));
-	const hubRows = $derived(
+	const typedRows = $derived(
 		(hub?.results ?? []).map((r) => lookups[r.repo] ?? r).filter((r) => matchesFilter(r, filter))
 	);
-
-	const openLocal = $derived(
-		expanded.local === undefined ? (localRows[0]?.path ?? null) : expanded.local
+	const fitCounts = $derived(countFits(typedRows));
+	const hubRows = $derived(typedRows.filter((r) => matchesFit(r, fitFilter)));
+	const loadedCount = $derived(
+		(local ?? []).filter((m) => m.status === 'loaded' || m.status === 'sleeping').length
 	);
-	const openHub = $derived(expanded.hub === undefined ? (hubRows[0]?.repo ?? null) : expanded.hub);
+	const openHub = $derived(expanded.hub ?? null);
 
 	const listTitle = $derived.by(() => {
-		if (tab === 'local') return `ON THIS MACHINE · ${disk?.path ?? 'MODELS'}`;
 		if (tab === 'hub' && searching) {
 			return query.trim()
 				? `HUGGING FACE · SEARCHING FOR “${query.trim().toUpperCase()}”…`
@@ -248,6 +256,7 @@
 	});
 
 	$effect(() => {
+		if (tab !== 'hub') return;
 		const params = fitQuery;
 		void filesVersion;
 		const controller = new AbortController();
@@ -454,8 +463,8 @@
 		filesChanged();
 	}
 
-	const toggle = (which: 'local' | 'hub', id: string, open: boolean) => {
-		expanded[which] = open ? null : id;
+	const toggle = (id: string, open: boolean) => {
+		expanded = { hub: open ? null : id };
 	};
 </script>
 
@@ -463,26 +472,13 @@
 	<SearchField
 		label="Search models"
 		bind:value={query}
-		placeholder="Search models or paste user/repo"
+		placeholder={tab === 'hub'
+			? 'Search Hugging Face or paste a repo, e.g. unsloth/Qwen3-32B-GGUF'
+			: 'Filter your models'}
 		minWidth="280px"
 		flex="1 1 280px"
 		oninput={onQuery}
 	/>
-{/snippet}
-
-{#snippet actions()}
-	<div class="header-actions">
-		<Segmented
-			label="Library source"
-			tabs
-			bind:value={tab}
-			options={[
-				{ value: 'local', label: local ? `On this machine · ${local.length}` : 'On this machine' },
-				{ value: 'hub', label: 'Hugging Face' }
-			]}
-		/>
-		{@render search()}
-	</div>
 {/snippet}
 
 {#snippet downloadButton(
@@ -607,61 +603,94 @@
 {/snippet}
 
 {#snippet localRow(m: LocalModel)}
-	{@const open = openLocal === m.path}
 	{@const action = localAction(m)}
-	<ModelRow
-		name={m.name}
-		source={m.path}
-		tags={displayTags(m.fit.moe ? ['moe'] : [], m.metadata)}
-		loaded={m.status === 'loaded'}
-		params={paramsLabel(m.metadata)}
-		context={profileLabel(m)}
-		{open}
-		ontoggle={() => toggle('local', m.path, open)}
-	>
-		{#snippet fit()}
-			<FitBar fit={m.fit} {scale} prefix={m.quant || undefined} />
-		{/snippet}
-		<p class="description">{localDescription(m)}</p>
-		{@render variantHeader()}
-		<div class="variant">
-			<span>{m.quant || 'unknown'}</span>
-			<span class="dim">{formatBytes(m.size_bytes)}</span>
-			<span class="variant-bar"><FitBar fit={m.fit} {scale} bare /></span>
-			<span style:color={verdictColor(m.fit)}>{verdictLabel(m.fit)} · {fitTotal(m.fit)}</span>
-			<span class="variant-action">
-				{#if action.kind === 'profile'}
-					<Button
-						variant="ghost"
-						tone="accent"
-						size="sm"
-						block
-						href={`${resolve('/profiles')}?new=${encodeURIComponent(action.path)}`}
-						title="Create a profile, which is what makes this model loadable"
-					>
-						Load
-					</Button>
-				{:else if action.kind === 'busy'}
-					<Button variant="ghost" size="sm" block disabled>{action.label}</Button>
-				{:else}
-					<Button
-						variant="ghost"
-						tone={action.kind === 'load' ? 'accent' : 'muted'}
-						size="sm"
-						block
-						disabled={busy[`model:${m.path}`]}
-						onclick={() => routerAction(m, action.kind === 'load' ? 'load' : 'unload', action.id)}
-					>
-						{action.kind === 'load' ? 'Load' : 'Unload'}
-					</Button>
-				{/if}
+	{@const up = m.status === 'loaded' || m.status === 'sleeping'}
+	<div class="local-row">
+		<div class="local-name">
+			<span class="local-title">
+				<span
+					class="dot"
+					style:background={up ? tones.ok : m.status === 'loading' ? tones.decode : tones.compute}
+				></span>
+				<span class="name ellipsis">{m.name}</span>
+				{#if m.metadata?.mtp_layers}<Tag tone="soft">MTP</Tag>{/if}
 			</span>
+			<span class="mono dim ellipsis tiny">{m.path}</span>
 		</div>
+		<span class="local-specs">
+			<span>{m.quant || 'unknown'}</span>
+			<span class="dim tiny">{formatBytes(m.size_bytes)} · {paramsLabel(m.metadata)}</span>
+		</span>
+		<span class="local-profile">
+			{#if m.profile}
+				<TextLink href={resolve('/profiles')}>{m.profile.alias}</TextLink>
+			{:else}
+				<span class="dim">no profile yet</span>
+			{/if}
+			<span class="dim tiny">{up ? m.status : m.status === 'loading' ? 'loading' : 'on disk'}</span>
+		</span>
+		<span class="local-actions">
+			{#if m.status === 'loaded' && m.router_id}
+				<Button
+					variant="ghost"
+					size="sm"
+					tone="accent"
+					href={resolve('/playground')}
+					onclick={() => (chat.model = m.router_id ?? '')}
+				>
+					Chat
+				</Button>
+			{/if}
+			{#if action.kind === 'profile'}
+				<Button
+					variant="ghost"
+					tone="accent"
+					size="sm"
+					href={`${resolve('/profiles')}?new=${encodeURIComponent(action.path)}`}
+					title="Create a profile, which is what makes this model loadable"
+				>
+					Load
+				</Button>
+			{:else if action.kind === 'busy'}
+				<Button variant="ghost" size="sm" disabled>{action.label}</Button>
+			{:else}
+				<Button
+					variant="ghost"
+					tone={action.kind === 'load' ? 'accent' : 'muted'}
+					size="sm"
+					disabled={busy[`model:${m.path}`]}
+					onclick={() => routerAction(m, action.kind === 'load' ? 'load' : 'unload', action.id)}
+				>
+					{action.kind === 'load' ? 'Load' : 'Unload'}
+				</Button>
+			{/if}
+			<button
+				type="button"
+				class="trash"
+				aria-label="Delete {m.name} from disk"
+				disabled={up || m.status === 'loading'}
+				title={up ? 'Unload it first' : undefined}
+				onclick={() => (confirming = m.path)}
+			>
+				<svg
+					aria-hidden="true"
+					width="14"
+					height="14"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"></path></svg
+				>
+			</button>
+		</span>
 		{#if m.status === 'loading'}
 			<JobPanel view={loadView(m)} label="Loading {m.name}" />
 		{/if}
-		<div class="foot">
-			{#if confirming === m.path}
+		{#if confirming === m.path}
+			<div class="confirm">
 				<span class="hint" role="alert">
 					Delete {m.path} from disk{m.profile
 						? `, leaving the profile ${m.profile.alias} without a model`
@@ -678,44 +707,24 @@
 					</Button>
 					<Button variant="ghost" size="sm" onclick={() => (confirming = null)}>Keep</Button>
 				</span>
-			{:else}
-				<span class="hint">
-					{#if m.profile}
-						<TextLink href={resolve('/profiles')}>Open in Profiles</TextLink> to change context{hostOnly
-							? ' and slots'
-							: ', slots and GPU layers'}.
-					{:else}
-						Load opens a new profile for this file, where you set its context and slots.
-					{/if}
-				</span>
-				<span class="foot-actions">
-					<Button
-						variant="danger"
-						size="sm"
-						disabled={m.status === 'loaded' || m.status === 'loading'}
-						title={m.status === 'loaded' ? 'Unload it first' : undefined}
-						onclick={() => (confirming = m.path)}
-					>
-						Delete
-					</Button>
-				</span>
-			{/if}
-		</div>
-	</ModelRow>
+			</div>
+		{/if}
+	</div>
 {/snippet}
 
 {#snippet hubRow(r: RepoRow)}
 	{@const open = openHub === r.repo}
-	{@const best = bestVariant(r)}
+	{@const best = bestForFit(r, fitFilter)}
 	<ModelRow
 		name={r.name}
 		source={r.repo}
+		onDisk={r.variants?.some((v) => v.local_path)}
 		tags={displayTags(r.tags, r.metadata)}
 		params={paramsLabel(r.metadata)}
 		context={nativeContext(r.metadata) ||
 			(r.downloads ? `${r.downloads.toLocaleString('en-US')} downloads` : undefined)}
 		{open}
-		ontoggle={() => toggle('hub', r.repo, open)}
+		ontoggle={() => toggle(r.repo, open)}
 	>
 		{#snippet fit()}
 			{#if best}
@@ -743,7 +752,7 @@
 			{/if}
 			{@render variantHeader()}
 			{#each r.variants as v (v.id)}
-				<div class="variant">
+				<div class={['variant', { unmatched: !fitMatches(v.fit, fitFilter) }]}>
 					<span class="quant">
 						{v.quant}{v.shards > 1 ? ` × ${v.shards}` : ''}
 						{#if mtp[r.repo]?.[v.id] === 'heads'}<Tag>MTP</Tag>{/if}
@@ -759,6 +768,9 @@
 				</div>
 			{/each}
 			<span class="hint">{repoHint(r, disk?.path ?? '')}</span>
+			{#if fitFilter !== 'any' && r.variants.some((v) => !fitMatches(v.fit, fitFilter))}
+				<span class="hint">Dimmed quants don't match the fit filter.</span>
+			{/if}
 			{#if Object.values(mtp[r.repo] ?? {}).some((m) => m === 'heads' || m === 'companion')}
 				<span class="hint">
 					MTP speeds up generation: add --spec-type draft-mtp to a profile's extra arguments. Tags
@@ -771,44 +783,71 @@
 
 <PageHeader
 	title="Library"
-	subtitle="Your GGUF models and everything on Hugging Face, checked against your hardware"
-	{actions}
+	subtitle={tab === 'hub'
+		? 'Every GGUF on Hugging Face, checked against your hardware before you download'
+		: `Models stored in ${disk?.path ?? 'the models directory'} on this machine`}
+	actions={search}
 />
 
-<Panel aria-label="Fit estimate settings" row padding="14px 20px" gap={12} class="fit-settings">
-	<div class="machine">
-		<svg
-			aria-hidden="true"
-			width="18"
-			height="18"
-			viewBox="0 0 24 24"
-			fill="none"
-			stroke="currentColor"
-			stroke-width="1.8"
-			stroke-linecap="round"
-			stroke-linejoin="round"
+<div class="views" role="tablist" aria-label="Library view">
+	<button
+		type="button"
+		role="tab"
+		class={['view', { on: tab === 'local' }]}
+		aria-selected={tab === 'local'}
+		onclick={() => (tab = 'local')}
+	>
+		<span class="view-name">
+			<svg
+				aria-hidden="true"
+				width="16"
+				height="16"
+				viewBox="0 0 24 24"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="1.8"
+				stroke-linecap="round"
+				stroke-linejoin="round"><path d="M3 5h18v11H3zM8 20h8M12 16v4"></path></svg
+			>
+			My machine
+			{#if local}<span class="view-count">{local.length}</span>{/if}
+		</span>
+		<span class="view-note">
+			{#if local}{loadedCount} loaded · {local.length - loadedCount} on disk{:else}Reading the
+				models directory{/if}
+		</span>
+	</button>
+	<button
+		type="button"
+		role="tab"
+		class={['view', { on: tab === 'hub' }]}
+		aria-selected={tab === 'hub'}
+		onclick={() => (tab = 'hub')}
+	>
+		<span class="view-name">
+			<svg
+				aria-hidden="true"
+				width="16"
+				height="16"
+				viewBox="0 0 24 24"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="1.8"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				><path
+					d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3.6 9h16.8M3.6 15h16.8M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"
+				></path></svg
+			>
+			Explore Hugging Face
+		</span>
+		<span class="view-note"
+			>{hostOnly
+				? 'Find GGUF models that fit your RAM'
+				: 'Find GGUF models that fit your GPUs'}</span
 		>
-			<rect x="3" y="6" width="18" height="12" rx="2"></rect>
-			<path d="M7 10h4v4H7zM15 10h2M15 14h2M7 3v3M17 3v3M7 18v3M17 18v3"></path>
-		</svg>
-		<div class="machine-text">
-			<span>Estimating fit for <span class="mono">{machineLabel(detected, machine)}</span></span>
-			<span class="dim small">
-				Weights + KV cache at your context size + compute buffers. {headroomLabel(machine)}
-			</span>
-		</div>
-	</div>
-	<div class="fit-controls">
-		<span class="control">
-			<span class="dim small">Context</span>
-			<Segmented label="Context size" surface="ground" bind:value={ctx} options={CTX_OPTIONS} />
-		</span>
-		<span class="control">
-			<span class="dim small">KV cache</span>
-			<Segmented label="KV cache type" surface="ground" bind:value={kv} options={KV_OPTIONS} />
-		</span>
-	</div>
-</Panel>
+	</button>
+</div>
 
 {#if notice}
 	<p class={['notice', { failed: notice.failed }]} role={notice.failed ? 'alert' : 'status'}>
@@ -816,97 +855,220 @@
 	</p>
 {/if}
 
-<section aria-labelledby="sg-h" class="suggestions">
-	<SectionHeading
-		title={`SUGGESTED FOR THIS MACHINE AT ${ctxLabel} CONTEXT`}
-		id="sg-h"
-		align="baseline"
-	>
-		{#snippet actions()}
-			{#if !suggestions || suggestionsSlow}
-				<span class="status checking">
-					<Spinner size={10} />Checking the starter catalog at {ctxLabel} · {appliedKv}…
-				</span>
-			{:else if suggestionsFresh}
-				<span class="status fresh">Updated just now</span>
-			{:else}
-				<span class="dim small">Updates when you change context or KV cache type</span>
-			{/if}
-		{/snippet}
-	</SectionHeading>
-	{#if suggestionsError}
-		{@render alert(hubProblem(suggestionsError))}
-	{:else if !suggestions || suggestionsSlow}
-		<div aria-busy="true" aria-label="Finding suggestions">
-			<Band layout="grid" min={300}>
-				{#each [0, 0.15, 0.3] as delay (delay)}
-					<div class="card skeleton" style:--delay="{delay}s">
-						<span class="shimmer" style:height="10px" style:width="52%"></span>
-						<span class="shimmer" style:height="18px" style:width="72%"></span>
-						<span class="shimmer" style:height="11px" style:width="44%"></span>
-						<span class="shimmer" style:height="12px"></span>
-						<span class="shimmer" style:height="34px"></span>
-						<span class="shimmer push" style:height="38px"></span>
-					</div>
-				{/each}
-			</Band>
-		</div>
-	{:else if suggestions.length === 0}
-		<Panel>
-			<EmptyState
-				title="Nothing in the starter catalog fits at this context"
-				detail="Try a shorter context or a smaller KV cache type, or search for a smaller model."
-			/>
-		</Panel>
+{#if tab === 'local'}
+	{#if localError}{@render alert(localError)}{/if}
+	{#if local === null}
+		{#if !localError}{@render loading('Reading the models directory')}{/if}
+	{:else if local.length === 0}
+		<section class="no-models rise" aria-labelledby="em-h">
+			<svg
+				aria-hidden="true"
+				width="40"
+				height="40"
+				viewBox="0 0 24 24"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="1.4"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				><path
+					d="M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.7z"
+				></path><path d="M3.3 7 12 12l8.7-5M12 22V12"></path></svg
+			>
+			<h2 id="em-h">No models on this machine yet</h2>
+			<p>
+				Explore Hugging Face to find a GGUF model. We'll show which ones fit, and anything you
+				download lands here in <code>{disk?.path ?? 'the models directory'}</code>. You can also put
+				a .gguf file there yourself.
+			</p>
+			<Button variant="primary" size="xl" onclick={() => (tab = 'hub')}>Explore Hugging Face</Button
+			>
+		</section>
 	{:else}
-		<Band layout="grid" min={300}>
-			{#each suggestions as s, i (s.category)}
-				<article class="card rise" style:animation-delay="{i * 90}ms">
-					<Eyebrow color={tones.decode}>{WHY[s.category] ?? s.category.toUpperCase()}</Eyebrow>
-					<div class="card-title">
-						<h3>{s.name}</h3>
-						<span class="mono dim">{s.quant} · {paramsLabel(s.metadata)}</span>
-					</div>
-					<FitBar fit={s.fit} {scale} height={12} />
-					<p class="description">{s.note}</p>
-					<div class="card-action">
-						{@render progress(s.repo, s.download_files, s.name, true, s.local_path)}
-						{#if !trackedJob(s.repo, s.download_files, jobs, tracked) && localModelFor(s.local_path, local ?? [])?.status !== 'loading'}
-							{@render downloadButton(
-								s.repo,
-								s.download_files,
-								`Download ${s.quant} · ${formatBytes(s.download_bytes)}`,
-								'ml',
-								true,
-								s.local_path
-							)}
-						{/if}
-					</div>
-				</article>
-			{/each}
-		</Band>
-	{/if}
-</section>
+		<Columns>
+			<Panel flex="3 1 760px" gap={12} aria-label="Models on this machine">
+				{#if localRows.length === 0}
+					<EmptyState title={`No local model matches “${query.trim()}”`} />
+				{/if}
+				<ScrollX minWidth={720}>
+					{#each localGroups(localRows) as group (group.title)}
+						<h2 class="group-title">{group.title}</h2>
+						{#each group.rows as m (m.path)}
+							{@render localRow(m)}
+						{/each}
+					{/each}
+				</ScrollX>
+				<div class="explore-cta">
+					<span
+						>Looking for something new? Explore checks every model against your hardware first.</span
+					>
+					<Button variant="ghost" size="md" tone="accent" onclick={() => (tab = 'hub')}>
+						Explore Hugging Face →
+					</Button>
+				</div>
+			</Panel>
+			<aside class="side">
+				<Panel aria-labelledby="dk-h" gap={12}>
+					<SectionHeading title={`DISK · ${disk?.path ?? 'MODELS'}`} id="dk-h" />
+					{#if diskError}
+						{@render alert(diskError)}
+					{:else if diskParts}
+						<StackedBar segments={diskParts.segments} label="Disk use" />
+						<Legend items={diskParts.items} stack />
+					{:else}
+						{@render loading('Measuring')}
+					{/if}
+				</Panel>
 
-<Columns>
-	<Panel aria-labelledby="ml-h" flex="3 1 760px" gap={12}>
-		<SectionHeading title={listTitle} id="ml-h">
+				<DownloadsPanel {jobs} oncancel={cancel} />
+			</aside>
+		</Columns>
+	{/if}
+{:else}
+	<Panel aria-label="Fit estimate settings" row padding="14px 20px" gap={12} class="fit-settings">
+		<div class="machine">
+			<svg
+				aria-hidden="true"
+				width="18"
+				height="18"
+				viewBox="0 0 24 24"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="1.8"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+			>
+				<rect x="3" y="6" width="18" height="12" rx="2"></rect>
+				<path d="M7 10h4v4H7zM15 10h2M15 14h2M7 3v3M17 3v3M7 18v3M17 18v3"></path>
+			</svg>
+			<div class="machine-text">
+				<span>Estimating fit for <span class="mono">{machineLabel(detected, machine)}</span></span>
+				<span class="dim small">
+					Weights + KV cache at your context size + compute buffers. {headroomLabel(machine)}
+				</span>
+			</div>
+		</div>
+		<div class="fit-controls">
+			<span class="control">
+				<span class="dim small">Context</span>
+				<Segmented label="Context size" surface="ground" bind:value={ctx} options={CTX_OPTIONS} />
+			</span>
+			<span class="control">
+				<span class="dim small">KV cache</span>
+				<Segmented label="KV cache type" surface="ground" bind:value={kv} options={KV_OPTIONS} />
+			</span>
+		</div>
+	</Panel>
+
+	<section aria-labelledby="sg-h" class="suggestions">
+		<SectionHeading
+			title={`SUGGESTED FOR THIS MACHINE AT ${ctxLabel} CONTEXT`}
+			id="sg-h"
+			align="baseline"
+		>
 			{#snippet actions()}
-				<Legend items={legend} gap={12} />
+				{#if !suggestions || suggestionsSlow}
+					<span class="status checking">
+						<Spinner size={10} />Checking the starter catalog at {ctxLabel} · {appliedKv}…
+					</span>
+				{:else if suggestionsFresh}
+					<span class="status fresh">Updated just now</span>
+				{:else}
+					<span class="dim small">Updates when you change context or KV cache type</span>
+				{/if}
 			{/snippet}
 		</SectionHeading>
-
-		{#if tab === 'hub'}
-			<div class="filters">
-				{#each filterOptions(hostOnly) as option (option.value)}
-					<ToggleChip
-						variant="pill"
-						pressed={filter === option.value}
-						onclick={() => (filter = option.value)}
-					>
-						{option.label}
-					</ToggleChip>
+		{#if suggestionsError}
+			{@render alert(hubProblem(suggestionsError))}
+		{:else if !suggestions || suggestionsSlow}
+			<div aria-busy="true" aria-label="Finding suggestions">
+				<Band layout="grid" min={300}>
+					{#each [0, 0.15, 0.3] as delay (delay)}
+						<div class="card skeleton" style:--delay="{delay}s">
+							<span class="shimmer" style:height="10px" style:width="52%"></span>
+							<span class="shimmer" style:height="18px" style:width="72%"></span>
+							<span class="shimmer" style:height="11px" style:width="44%"></span>
+							<span class="shimmer" style:height="12px"></span>
+							<span class="shimmer" style:height="34px"></span>
+							<span class="shimmer push" style:height="38px"></span>
+						</div>
+					{/each}
+				</Band>
+			</div>
+		{:else if suggestions.length === 0}
+			<Panel>
+				<EmptyState
+					title="Nothing in the starter catalog fits at this context"
+					detail="Try a shorter context or a smaller KV cache type, or search for a smaller model."
+				/>
+			</Panel>
+		{:else}
+			<Band layout="grid" min={300}>
+				{#each suggestions as s, i (s.category)}
+					<article class="card rise" style:animation-delay="{i * 90}ms">
+						<Eyebrow color={tones.decode}>{WHY[s.category] ?? s.category.toUpperCase()}</Eyebrow>
+						<div class="card-title">
+							<h3>{s.name}</h3>
+							<span class="mono dim">{s.quant} · {paramsLabel(s.metadata)}</span>
+						</div>
+						<FitBar fit={s.fit} {scale} height={12} />
+						<p class="description">{s.note}</p>
+						<div class="card-action">
+							{@render progress(s.repo, s.download_files, s.name, true, s.local_path)}
+							{#if !trackedJob(s.repo, s.download_files, jobs, tracked) && localModelFor(s.local_path, local ?? [])?.status !== 'loading'}
+								{@render downloadButton(
+									s.repo,
+									s.download_files,
+									`Download ${s.quant} · ${formatBytes(s.download_bytes)}`,
+									'ml',
+									true,
+									s.local_path
+								)}
+							{/if}
+						</div>
+					</article>
 				{/each}
+			</Band>
+		{/if}
+	</section>
+
+	<Columns>
+		<Panel aria-labelledby="ml-h" flex="3 1 760px" gap={12}>
+			<SectionHeading title={listTitle} id="ml-h">
+				{#snippet actions()}
+					<Legend items={legend} gap={12} />
+				{/snippet}
+			</SectionHeading>
+
+			<div class="filter-row">
+				<span class="control">
+					<span class="dim small">Fit</span>
+					<span class="fit-group" role="group" aria-label="Filter by fit">
+						{#each fitOptions(hostOnly) as option (option.value)}
+							<button
+								type="button"
+								class={['fit-option', { on: fitFilter === option.value }]}
+								aria-pressed={fitFilter === option.value}
+								onclick={() => (fitFilter = option.value)}
+							>
+								<span class="fit-dot" style:background={option.color}></span>
+								{option.label}
+								<span class="fit-count">{fitCounts[option.value]}</span>
+							</button>
+						{/each}
+					</span>
+				</span>
+				<div class="filters">
+					{#each filterOptions() as option (option.value)}
+						<ToggleChip
+							variant="pill"
+							pressed={filter === option.value}
+							onclick={() => (filter = option.value)}
+						>
+							{option.label}
+						</ToggleChip>
+					{/each}
+				</div>
 			</div>
 			{#if hubError}
 				{@render alert(hubProblem(hubError))}
@@ -957,6 +1119,11 @@
 						</Button>
 					{/snippet}
 				</EmptyState>
+			{:else if (hub?.results.length ?? 0) > 0}
+				<EmptyState
+					title="No models match these filters"
+					detail={noFitHint(fitFilter, filter, ctxLabel, hostOnly)}
+				/>
 			{:else}
 				<EmptyState
 					title={appliedQuery ? `Nothing matches “${appliedQuery}”` : 'Nothing to show'}
@@ -965,86 +1132,278 @@
 						: 'Try another filter, or All.'}
 				/>
 			{/if}
-		{:else}
-			{#if localError}
-				{@render alert(localError)}
-			{/if}
-			{#if localRows.length > 0}
-				<div class="rows">
-					{#each localRows as m (m.path)}
-						{@render localRow(m)}
-					{/each}
+		</Panel>
+
+		<aside class="side">
+			<Panel aria-labelledby="hw-h" gap={10}>
+				<SectionHeading title="HOW TO READ THE VERDICTS" id="hw-h" />
+				<div class="verdicts">
+					{#if hostOnly}
+						<span>
+							<span style:color={tones.ok}>Fits in RAM</span>: everything runs from system memory on
+							the CPU, with the headroom left over.
+						</span>
+						<span>
+							<span style:color={tones.errorSoft}>Too large</span>: won't fit in RAM at this
+							context.
+						</span>
+					{:else}
+						<span>
+							<span style:color={tones.ok}>Fits on GPU</span>: everything on the GPUs. Fastest.
+						</span>
+						<span>
+							<span style:color={tones.warn}>Partial offload</span>: some layers, or MoE experts
+							with
+							<code>--n-cpu-moe</code>, run from system RAM. Works, but slower.
+						</span>
+						<span>
+							<span style:color={tones.errorSoft}>Too large</span>: won't fit in VRAM and RAM
+							together at this context.
+						</span>
+					{/if}
 				</div>
-			{:else if local === null}
-				{#if !localError}{@render loading('Reading the models directory')}{/if}
-			{:else if local.length === 0}
-				<EmptyState
-					title="No models on this machine"
-					detail={`GGUF files in ${disk?.path ?? 'the models directory'} show here. Download one from Hugging Face to start.`}
-				>
-					{#snippet actions()}
-						<Button variant="ghost" size="sm" onclick={() => (tab = 'hub')}
-							>Browse Hugging Face</Button
-						>
-					{/snippet}
-				</EmptyState>
-			{:else}
-				<EmptyState title={`No local model matches “${query.trim()}”`} />
-			{/if}
-		{/if}
-	</Panel>
-
-	<aside class="side">
-		<DownloadsPanel {jobs} oncancel={cancel} />
-
-		<Panel aria-labelledby="dk-h" gap={12}>
-			<SectionHeading title={`DISK · ${disk?.path ?? 'MODELS'}`} id="dk-h" />
-			{#if diskError}
-				{@render alert(diskError)}
-			{:else if diskParts}
-				<StackedBar segments={diskParts.segments} label="Disk use" />
-				<Legend items={diskParts.items} stack />
-			{:else}
-				{@render loading('Measuring')}
-			{/if}
-		</Panel>
-
-		<Panel aria-labelledby="hw-h" gap={10}>
-			<SectionHeading title="HOW TO READ THE VERDICTS" id="hw-h" />
-			<div class="verdicts">
-				{#if hostOnly}
-					<span>
-						<span style:color={tones.ok}>Fits in RAM</span>: everything runs from system memory on
-						the CPU, with the headroom left over.
-					</span>
-					<span>
-						<span style:color={tones.errorSoft}>Too large</span>: won't fit in RAM at this context.
-					</span>
-				{:else}
-					<span>
-						<span style:color={tones.ok}>Fits on GPU</span>: everything on the GPUs. Fastest.
-					</span>
-					<span>
-						<span style:color={tones.warn}>Partial offload</span>: some layers, or MoE experts with
-						<code>--n-cpu-moe</code>, run from system RAM. Works, but slower.
-					</span>
-					<span>
-						<span style:color={tones.errorSoft}>Too large</span>: won't fit in VRAM and RAM together
-						at this context.
-					</span>
-				{/if}
-			</div>
-		</Panel>
-	</aside>
-</Columns>
+			</Panel>
+			<DownloadsPanel {jobs} oncancel={cancel} note="Finished downloads appear under My machine." />
+		</aside>
+	</Columns>
+{/if}
 
 <style>
-	.header-actions {
+	.views {
+		display: flex;
+		flex-wrap: wrap;
+		border-bottom: 1px solid var(--border-panel);
+	}
+
+	.view {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: var(--space-4);
+		min-height: 64px;
+		padding: var(--space-10) var(--space-20) var(--space-12);
+		margin-bottom: -1px;
+		background: transparent;
+		border: none;
+		border-bottom: 2px solid transparent;
+		color: var(--fg-tertiary);
+		text-align: left;
+		cursor: pointer;
+	}
+
+	.view.on {
+		color: var(--fg-bright);
+		border-bottom-color: var(--color-decode);
+	}
+
+	.view-name {
+		display: flex;
+		align-items: center;
+		gap: var(--space-8);
+		font-size: 15px;
+		font-weight: 500;
+	}
+
+	.view-count {
+		font-family: var(--font-mono);
+		font-size: var(--fs-11);
+		color: var(--fg-muted);
+	}
+
+	.view-note {
+		font-size: var(--fs-12);
+		font-weight: 400;
+		color: var(--fg-muted);
+	}
+
+	.no-models {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 14px;
+		padding: 56px var(--space-24);
+		background: var(--bg-panel);
+		border: 1px dashed var(--border-ghost);
+		border-radius: var(--radius-7);
+		color: var(--color-compute);
+		text-align: center;
+	}
+
+	.no-models h2 {
+		margin: 0;
+		font-size: var(--fs-20, 20px);
+		font-weight: 600;
+		color: var(--fg-primary);
+	}
+
+	.no-models p {
+		margin: 0;
+		max-width: 460px;
+		font-size: var(--fs-14);
+		line-height: 1.6;
+		color: var(--fg-tertiary);
+		overflow-wrap: anywhere;
+	}
+
+	.group-title {
+		margin: 0;
+		padding: var(--space-16) 0 var(--space-10);
+		font-family: var(--font-mono);
+		font-size: var(--fs-11);
+		font-weight: 500;
+		letter-spacing: var(--tracking-caps);
+		color: var(--fg-muted);
+	}
+
+	.local-row {
+		display: grid;
+		grid-template-columns: minmax(0, 1.7fr) 130px 170px 220px;
+		align-items: center;
+		gap: var(--space-8) var(--space-16);
+		padding: var(--space-12) 0;
+		border-top: 1px solid var(--border-row);
+	}
+
+	.local-name,
+	.local-specs,
+	.local-profile {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		min-width: 0;
+		font-size: var(--fs-12);
+	}
+
+	.local-name {
+		gap: var(--space-4);
+	}
+
+	.local-specs {
+		font-family: var(--font-mono);
+	}
+
+	.local-title {
+		display: flex;
+		align-items: center;
+		gap: var(--space-8);
+		min-width: 0;
+		font-size: var(--fs-14);
+	}
+
+	.dot {
+		flex: none;
+		width: 8px;
+		height: 8px;
+		border-radius: var(--radius-round);
+	}
+
+	.name {
+		font-weight: 500;
+	}
+
+	.tiny {
+		font-size: var(--fs-11);
+	}
+
+	.local-actions {
+		display: flex;
+		justify-content: flex-end;
+		align-items: center;
+		gap: var(--space-6);
+	}
+
+	.trash {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 32px;
+		min-height: 32px;
+		border: 1px solid var(--border-ghost);
+		border-radius: var(--radius-4);
+		background: transparent;
+		color: var(--fg-muted);
+		cursor: pointer;
+	}
+
+	.trash:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
+
+	.confirm {
+		grid-column: 1 / -1;
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
+		justify-content: space-between;
 		gap: var(--space-8);
-		flex: 1 1 auto;
+	}
+
+	.explore-cta {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-10);
+		padding: 14px var(--space-16);
+		background: var(--bg-inset);
+		border: 1px solid var(--border-panel);
+		border-radius: var(--radius-6);
+		font-size: var(--fs-13);
+		color: var(--fg-tertiary);
+	}
+
+	.filter-row {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-10) var(--space-16);
+		padding-bottom: var(--space-4);
+	}
+
+	.fit-group {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 2px;
+		padding: 3px;
+		background: var(--bg-ground);
+		border: 1px solid var(--border-panel);
+		border-radius: var(--radius-5);
+	}
+
+	.fit-option {
+		display: flex;
+		align-items: center;
+		gap: var(--space-6);
+		min-height: 30px;
+		padding: 0 var(--space-10);
+		border: none;
+		border-radius: var(--radius-4);
+		background: transparent;
+		color: var(--fg-tertiary);
+		font-size: var(--fs-12);
+		cursor: pointer;
+	}
+
+	.fit-option.on {
+		background: var(--bg-segment-on);
+		color: var(--fg-bright);
+	}
+
+	.fit-dot {
+		width: 7px;
+		height: 7px;
+		border-radius: var(--radius-round);
+	}
+
+	.fit-count {
+		font-family: var(--font-mono);
+		font-size: var(--fs-11);
+		color: var(--fg-muted);
+	}
+
+	.unmatched {
+		opacity: 0.4;
 	}
 
 	:global(.fit-settings) {
@@ -1207,18 +1566,6 @@
 		font-size: var(--fs-10);
 		letter-spacing: 0.06em;
 		color: var(--fg-faint);
-	}
-
-	.foot {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		justify-content: space-between;
-		gap: var(--space-8) var(--space-14);
-	}
-
-	.foot .hint {
-		flex: 1 1 240px;
 	}
 
 	.foot-actions {

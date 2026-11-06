@@ -52,7 +52,7 @@ test('every view renders live data without errors or phone overflow', async ({ p
 		['/requests', 'Requests', '/v1/chat/completions'],
 		['/logs', 'Logs', /slot|srv/],
 		['/playground', 'Playground', 'REQUEST SETTINGS'],
-		['/library', 'Library', /On this machine/],
+		['/library', 'Library', /My machine/],
 		['/profiles', 'Profiles', 'gpt-oss-20b'],
 		['/builds', 'Builds', 'b12110'],
 		['/bench', 'Bench', 'llama-bench']
@@ -156,7 +156,6 @@ test('a benchmark runs to results and the models come back', async ({ page, requ
 
 test('the Library lists the local models', async ({ page }) => {
 	await open(page, '/library', 'Library');
-	await page.getByRole('tab', { name: /On this machine/ }).click();
 	await expect(page.locator('main').getByText('Q4_K_M').first()).toBeVisible();
 	await expect(
 		page
@@ -212,7 +211,8 @@ test('a Library search loads more results', async ({ page }) => {
 		});
 	});
 	await open(page, '/library', 'Library');
-	await page.getByPlaceholder('Search models or paste user/repo').fill('anything');
+	await page.getByRole('tab', { name: /Explore Hugging Face/ }).click();
+	await page.getByPlaceholder(/Search Hugging Face/).fill('anything');
 	await expect(page.locator('main').getByText('u/first').first()).toBeVisible();
 	await page.getByRole('button', { name: 'Load more' }).click();
 	await expect(page.locator('main').getByText('u/second').first()).toBeVisible();
@@ -329,8 +329,11 @@ test('a Library row tags the quants that have MTP heads', async ({ page }) => {
 		route.fulfill({ json: { variants: { Q4_K_M: 'none', Q8_0: 'heads', side: 'companion' } } })
 	);
 	await open(page, '/library', 'Library');
-	await page.getByPlaceholder('Search models or paste user/repo').fill('u/m');
+	await page.getByRole('tab', { name: /Explore Hugging Face/ }).click();
+	await page.getByPlaceholder(/Search Hugging Face/).fill('u/m');
 	const main = page.locator('main');
+	await expect(main.locator('.quant')).toHaveCount(0);
+	await main.getByRole('button', { name: /u\/m/ }).click();
 	await expect(main.locator('.quant', { hasText: 'Q8_0' }).getByText('MTP')).toBeVisible();
 	await expect(main.locator('.quant', { hasText: 'Q4_K_M' }).getByText('MTP')).toHaveCount(0);
 	await expect(
@@ -382,6 +385,7 @@ test('Library suggestions show a skeleton only when slow, and a download shows i
 	});
 
 	await open(page, '/library', 'Library');
+	await page.getByRole('tab', { name: /Explore Hugging Face/ }).click();
 	const suggestions = page.getByRole('region', { name: /SUGGESTED FOR THIS MACHINE/ });
 	await expect(suggestions.getByLabel('Finding suggestions')).toBeVisible();
 	await expect(suggestions.getByText(/Checking the starter catalog/)).toBeVisible();
@@ -475,10 +479,11 @@ test('a Library search shows it is working from the first keystroke', async ({ p
 		});
 	});
 	await open(page, '/library', 'Library');
+	await page.getByRole('tab', { name: /Explore Hugging Face/ }).click();
 	const main = page.locator('main');
 	await expect(main.getByText('before-model').first()).toBeVisible();
 
-	await page.getByPlaceholder('Search models or paste user/repo').fill('anything');
+	await page.getByPlaceholder(/Search Hugging Face/).fill('anything');
 	const skeleton = main.getByLabel('Searching Hugging Face');
 	await expect(skeleton).toBeVisible();
 	await expect(main.getByText('before-model')).toHaveCount(0);
@@ -687,4 +692,66 @@ test('a rate-limited first install says why and when it tries again', async ({ p
 	await expect(page.locator('main').getByText('LLAMA_GUI_GITHUB_TOKEN')).toBeVisible();
 	await page.goto(`${server.url}/ui/logs`);
 	await expect(page.getByText(/GitHub's rate limit stopped the install/)).toBeVisible();
+});
+
+test('Explore filters by fit, defaulting to what fits, with rows collapsed', async ({ page }) => {
+	const G = 1024 ** 3;
+	const row = (name: string, verdict: string) => ({
+		repo: `u/${name}`,
+		name,
+		tags: [],
+		downloads: 1,
+		best: 'Q4',
+		variants: [
+			{
+				id: 'Q4',
+				quant: 'Q4',
+				files: [{ name: `${name}.gguf`, size: G }],
+				size_bytes: G,
+				shards: 1,
+				fit: { total_bytes: G, verdict, weights_bytes: G, kv_bytes: 0, compute_bytes: 0 },
+				download_files: [`${name}.gguf`],
+				download_bytes: G
+			}
+		]
+	});
+	await page.route('**/api/v1/library/search*', (route) =>
+		route.fulfill({
+			json: {
+				source: 'catalog',
+				results: [
+					row('fits', 'fits_gpu'),
+					row('partly', 'partial_offload'),
+					row('huge', 'too_large')
+				],
+				hardware: { vram_bytes: 12 * G, ram_bytes: 32 * G, headroom_bytes: 0 }
+			}
+		})
+	);
+	await page.goto(`${server.url}/ui/library`);
+	await expect(page.getByRole('tab', { name: /My machine/ })).toHaveAttribute(
+		'aria-selected',
+		'true'
+	);
+	await page.getByRole('tab', { name: /Explore Hugging Face/ }).click();
+
+	const main = page.locator('main');
+	const fit = page.getByRole('group', { name: 'Filter by fit' });
+	await expect(fit.getByRole('button', { name: /Fits on GPU/ })).toHaveAttribute(
+		'aria-pressed',
+		'true'
+	);
+	await expect(main.getByRole('button', { name: /u\/fits/ })).toBeVisible();
+	await expect(main.getByRole('button', { name: /u\/partly/ })).toHaveCount(0);
+	await expect(main.locator('.quant')).toHaveCount(0);
+
+	await fit.getByRole('button', { name: /Partial offload/ }).click();
+	await expect(main.getByRole('button', { name: /u\/partly/ })).toBeVisible();
+	await expect(main.getByRole('button', { name: /u\/fits/ })).toHaveCount(0);
+
+	await fit.getByRole('button', { name: /^Any/ }).click();
+	await expect(main.getByRole('button', { name: /u\/huge/ })).toBeVisible();
+
+	await main.getByRole('button', { name: /u\/huge/ }).click();
+	await expect(main.locator('.quant')).toHaveCount(1);
 });

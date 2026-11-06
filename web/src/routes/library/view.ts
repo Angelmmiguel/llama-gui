@@ -20,23 +20,107 @@ export const CTX_OPTIONS = [
 
 export const KV_OPTIONS = [{ value: 'f16' }, { value: 'q8_0' }, { value: 'q4_0' }] as const;
 
-export type ListFilter = 'all' | 'fits' | 'moe' | 'chat' | 'vision' | 'embedding';
+export type ListFilter = 'all' | 'moe' | 'chat' | 'vision' | 'embedding';
+export type FitFilter = 'gpu' | 'partial' | 'large' | 'any';
 
 const GIB = 1024 ** 3;
 
-/** The API narrows these on the hub; `fits` and `moe` depend on what the row turns out to be. */
+/** The API narrows these on the hub; `moe` depends on what the row turned out to be. */
 export function serverFilter(filter: ListFilter): string | undefined {
 	return filter === 'chat' || filter === 'vision' || filter === 'embedding' ? filter : undefined;
 }
 
-export function filterOptions(hostOnly: boolean): { value: ListFilter; label: string }[] {
+export function filterOptions(): { value: ListFilter; label: string }[] {
 	return [
-		{ value: 'all', label: 'All' },
-		{ value: 'fits', label: hostOnly ? 'Fits in RAM' : 'Fits on GPU' },
-		{ value: 'moe', label: 'MoE' },
+		{ value: 'all', label: 'All types' },
 		{ value: 'chat', label: 'Chat' },
 		{ value: 'vision', label: 'Vision' },
-		{ value: 'embedding', label: 'Embedding' }
+		{ value: 'embedding', label: 'Embedding' },
+		{ value: 'moe', label: 'MoE' }
+	];
+}
+
+/** Which fit filter a verdict falls under. A verdict from a newer build only shows under Any. */
+function fitCategory(fit: LibraryFit): FitFilter {
+	switch (fit.verdict) {
+		case 'fits_gpu':
+		case 'fits_ram':
+			return 'gpu';
+		case 'partial_offload':
+		case 'offload_experts':
+			return 'partial';
+		case 'too_large':
+			return 'large';
+		default:
+			return 'any';
+	}
+}
+
+export const fitMatches = (fit: LibraryFit, filter: FitFilter) =>
+	filter === 'any' || fitCategory(fit) === filter;
+
+/** The fit choices. Without a GPU nothing is partly offloaded, so that one goes. */
+export function fitOptions(
+	hostOnly: boolean
+): { value: FitFilter; label: string; color: string }[] {
+	return [
+		{ value: 'gpu' as const, label: hostOnly ? 'Fits in RAM' : 'Fits on GPU', color: tones.ok },
+		{ value: 'partial' as const, label: 'Partial offload', color: tones.warn },
+		{ value: 'large' as const, label: 'Too large', color: tones.errorSoft },
+		{ value: 'any' as const, label: 'Any', color: tones.muted }
+	].filter((o) => !hostOnly || o.value !== 'partial');
+}
+
+/** A row still being looked up stays: it has no verdict to be filtered by yet. */
+export function matchesFit(row: RepoRow, filter: FitFilter): boolean {
+	if (filter === 'any' || !row.variants) return true;
+	return row.variants.some((v) => fitMatches(v.fit, filter));
+}
+
+/** How many rows each choice would show. A repo with quants in several counts in each. */
+export function countFits(rows: readonly RepoRow[]): Record<FitFilter, number> {
+	const count = (filter: FitFilter) =>
+		rows.filter((r) => r.variants?.some((v) => fitMatches(v.fit, filter))).length;
+	return {
+		gpu: count('gpu'),
+		partial: count('partial'),
+		large: count('large'),
+		any: rows.length
+	};
+}
+
+/** The quant a row leads with: the server's pick if it matches, else the largest that fits or the smallest that doesn't. */
+export function bestForFit(row: RepoRow, filter: FitFilter) {
+	const best = bestVariant(row);
+	if (filter === 'any' || (best && fitMatches(best.fit, filter))) return best;
+	const matching = row.variants?.filter((v) => fitMatches(v.fit, filter)) ?? [];
+	return filter === 'gpu' ? matching.at(-1) : matching[0];
+}
+
+const FIT_WORDS: Record<FitFilter, string> = {
+	gpu: 'fit on your GPUs',
+	partial: 'need partial offload',
+	large: 'are too large',
+	any: 'match'
+};
+
+export function noFitHint(filter: FitFilter, type: ListFilter, context: string, hostOnly: boolean) {
+	const kind = type === 'all' ? '' : `${type === 'moe' ? 'MoE' : type} `;
+	const words = hostOnly && filter === 'gpu' ? 'fit in RAM' : FIT_WORDS[filter];
+	const tip = hostOnly
+		? 'Try a smaller context or a q8_0 KV cache.'
+		: 'Try a smaller context, a q8_0 KV cache or the Partial offload filter.';
+	return `No ${kind}models ${words} at ${context} context. ${tip}`;
+}
+
+/** Loaded first, as in the design's groups. A loading model counts as on disk until it's up. */
+export function localGroups(models: readonly LocalModel[]) {
+	const isUp = (m: LocalModel) => m.status === 'loaded' || m.status === 'sleeping';
+	const up = models.filter(isUp);
+	const rest = models.filter((m) => !isUp(m));
+	return [
+		...(up.length > 0 ? [{ title: `LOADED · ${up.length}`, rows: up }] : []),
+		...(rest.length > 0 ? [{ title: `ON DISK · ${rest.length}`, rows: rest }] : [])
 	];
 }
 
@@ -211,28 +295,7 @@ export function repoHint(row: RepoRow, modelsPath: string): string {
 	return parts.join(' ');
 }
 
-export function localDescription(m: LocalModel): string {
-	const what = [
-		m.metadata?.architecture,
-		m.shards > 1 ? `${m.shards} shards` : '',
-		m.mmproj ? 'with mmproj' : ''
-	]
-		.filter(Boolean)
-		.join(', ');
-	const lead = what ? `${what[0].toUpperCase()}${what.slice(1)}. ` : '';
-	if (m.status === 'loaded')
-		return `${lead}Loaded as ${m.router_id}. The bar shows what the router measured.`;
-	if (m.status === 'loading') return `${lead}Loading as ${m.router_id}.`;
-	if (m.profile) return `${lead}On disk, with the profile ${m.profile.alias}.`;
-	return `${lead}On disk, with no profile yet: a profile is what makes it loadable.`;
-}
-
 /** The context a profile asks for: -c is the total, split across the slots. */
-export function profileLabel(m: LocalModel): string {
-	if (!m.profile) return nativeContext(m.metadata);
-	const slots = m.profile.parallel || 1;
-	return `profile: ${contextLabel(m.profile.ctx_size)} · ${slots} slot${slots === 1 ? '' : 's'}`;
-}
 
 export type LocalAction =
 	| { kind: 'unload' | 'load'; id: string }
@@ -250,8 +313,6 @@ export const bestVariant = (row: RepoRow) => row.variants?.find((v) => v.id === 
 
 export function matchesFilter(row: RepoRow, filter: ListFilter): boolean {
 	switch (filter) {
-		case 'fits':
-			return !!row.variants?.some((v) => fitsInMemory(v.fit));
 		case 'moe':
 			return (
 				row.tags.includes('moe') || !!row.metadata?.is_moe || !!row.variants?.some((v) => v.fit.moe)

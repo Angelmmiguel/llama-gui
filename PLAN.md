@@ -305,6 +305,7 @@ Order keeps a usable product at each step: M3 is already a working managed llama
 - [x] Blurred placeholder behind "Load a model first" on a fresh Overview
 - [x] Tests and the demo no longer use GitHub's rate limit
 - [x] Say when GitHub's rate limit stops the first install, and when it tries again
+- [x] Library split into My machine and Explore, with a fit filter and collapsed rows
 
 ### Found testing on a real GPU (RTX 3060, driver 615)
 
