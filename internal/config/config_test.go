@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -22,7 +23,7 @@ func TestDefaults(t *testing.T) {
 		KeepBuilds: 3, ModelsMax: 4, MemoryMargin: 2048, Capture: "meta",
 		Retention: 7 * 24 * time.Hour, LogVerbosity: 3,
 	}
-	if cfg != want {
+	if !reflect.DeepEqual(cfg, want) {
 		t.Errorf("got %+v\nwant %+v", cfg, want)
 	}
 }
@@ -49,6 +50,8 @@ var settings = []struct {
 	{"LLAMA_GUI_LOG_VERBOSITY", "log-verbosity", "4", func(c Config) any { return c.LogVerbosity }, 4},
 	{"LLAMA_GUI_HF_TOKEN", "hf-token", "hf", func(c Config) any { return c.HFToken }, "hf"},
 	{"LLAMA_GUI_GITHUB_TOKEN", "github-token", "gh", func(c Config) any { return c.GitHubToken }, "gh"},
+	{"LLAMA_GUI_ALLOWED_ORIGINS", "allowed-origins", "https://chat.example.com", func(c Config) any { return c.AllowedOrigins }, []string{"https://chat.example.com"}},
+	{"LLAMA_GUI_ALLOWED_HOSTS", "allowed-hosts", "llm.example.com", func(c Config) any { return c.AllowedHosts }, []string{"llm.example.com"}},
 }
 
 func TestEverySettingHasEnvAndFlag(t *testing.T) {
@@ -58,15 +61,57 @@ func TestEverySettingHasEnvAndFlag(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got := s.get(cfg); got != s.want {
+			if got := s.get(cfg); !reflect.DeepEqual(got, s.want) {
 				t.Errorf("env: got %v, want %v", got, s.want)
 			}
 			cfg, err = Load([]string{"--" + s.flag, s.value}, env(nil))
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got := s.get(cfg); got != s.want {
+			if got := s.get(cfg); !reflect.DeepEqual(got, s.want) {
 				t.Errorf("flag: got %v, want %v", got, s.want)
+			}
+		})
+	}
+}
+
+func TestAllowedLists(t *testing.T) {
+	origins := func(c Config) []string { return c.AllowedOrigins }
+	hosts := func(c Config) []string { return c.AllowedHosts }
+	for _, tc := range []struct {
+		name, flag, value string
+		get               func(Config) []string
+		want              []string
+		wantErr           bool
+	}{
+		{"several origins", "allowed-origins", "https://a.example, http://b.example:8080,", origins, []string{"https://a.example", "http://b.example:8080"}, false},
+		{"origin is lowercased", "allowed-origins", "HTTPS://Chat.Example.com", origins, []string{"https://chat.example.com"}, false},
+		{"any origin", "allowed-origins", "*", origins, []string{"*"}, false},
+		{"origin with a path", "allowed-origins", "https://a.example/", origins, nil, true},
+		{"origin with a query", "allowed-origins", "https://a.example?x=1", origins, nil, true},
+		{"origin with credentials", "allowed-origins", "https://u@a.example", origins, nil, true},
+		{"origin without a scheme", "allowed-origins", "a.example", origins, nil, true},
+		{"other scheme", "allowed-origins", "ftp://a.example", origins, nil, true},
+		{"star among origins", "allowed-origins", "*,https://a.example", origins, nil, true},
+		{"several hosts", "allowed-hosts", "LLM.example.com, a.b", hosts, []string{"llm.example.com", "a.b"}, false},
+		{"any host", "allowed-hosts", "*", hosts, []string{"*"}, false},
+		{"host with a port", "allowed-hosts", "a.example:8080", hosts, nil, true},
+		{"host with a scheme", "allowed-hosts", "https://a.example", hosts, nil, true},
+		{"star among hosts", "allowed-hosts", "a.example,*", hosts, nil, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := Load([]string{"--" + tc.flag, tc.value}, env(nil))
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("err = %v", err)
+			}
+			if err != nil {
+				if !strings.Contains(err.Error(), tc.flag) {
+					t.Errorf("%v does not name %s", err, tc.flag)
+				}
+				return
+			}
+			if got := tc.get(cfg); !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("got %v, want %v", got, tc.want)
 			}
 		})
 	}

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"regexp"
 	"slices"
 	"strconv"
@@ -38,6 +39,11 @@ type Config struct {
 	LogVerbosity int
 	HFToken      string
 	GitHubToken  string
+	// AllowedOrigins are the browser origins that may call inference routes, or
+	// just "*". Lowercase, since that is how browsers send them.
+	AllowedOrigins []string
+	// AllowedHosts are extra host names to serve, or just "*". Lowercase.
+	AllowedHosts []string
 
 	// Version is the running binary's version. main sets it after Load; it is
 	// not configurable.
@@ -55,6 +61,8 @@ var (
 	updates  = []string{"off", "notify", "auto"}
 	captures = []string{CaptureMeta, CaptureBodies}
 )
+
+var hostName = regexp.MustCompile(`^[a-z0-9_]([a-z0-9._-]*[a-z0-9_-])?$`)
 
 // versionTag matches the tags llama.cpp publishes. It is deliberately narrow
 // because a version later becomes part of a URL and a directory name.
@@ -93,6 +101,8 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 	verbosity := str("log-verbosity", "LLAMA_GUI_LOG_VERBOSITY", "3")
 	hfToken := str("hf-token", "LLAMA_GUI_HF_TOKEN", getenv("HF_TOKEN"))
 	githubToken := str("github-token", "LLAMA_GUI_GITHUB_TOKEN", "")
+	origins := str("allowed-origins", "LLAMA_GUI_ALLOWED_ORIGINS", "")
+	hosts := str("allowed-hosts", "LLAMA_GUI_ALLOWED_HOSTS", "")
 
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
@@ -157,7 +167,39 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 		err = errors.Join(err, fmt.Errorf("retention: %w", e))
 	}
 	cfg.Retention = d
+	if cfg.AllowedOrigins, e = parseList(*origins, isOrigin); e != nil {
+		err = errors.Join(err, fmt.Errorf("allowed-origins: %w, such as https://chat.example.com", e))
+	}
+	if cfg.AllowedHosts, e = parseList(*hosts, hostName.MatchString); e != nil {
+		err = errors.Join(err, fmt.Errorf("allowed-hosts: %w, a host name without scheme or port", e))
+	}
 	return cfg, err
+}
+
+// parseList reads a comma-separated list whose items pass valid, or a lone "*".
+func parseList(raw string, valid func(string) bool) ([]string, error) {
+	var out []string
+	for item := range strings.SplitSeq(strings.ToLower(raw), ",") {
+		item = strings.TrimSpace(item)
+		switch {
+		case item == "":
+		case item == "*" || valid(item):
+			out = append(out, item)
+		default:
+			return nil, fmt.Errorf("%q is not valid", item)
+		}
+	}
+	if len(out) > 1 && slices.Contains(out, "*") {
+		return nil, errors.New(`"*" cannot be combined with other values`)
+	}
+	return out, nil
+}
+
+// isOrigin says s is what a browser sends as Origin: scheme and host, nothing else.
+func isOrigin(s string) bool {
+	u, err := url.Parse(s)
+	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" &&
+		s == u.Scheme+"://"+u.Host
 }
 
 func isVersion(v string) bool {
