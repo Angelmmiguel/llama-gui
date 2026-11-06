@@ -3,6 +3,7 @@
 	import type { Snippet } from 'svelte';
 	import { page } from '$app/state';
 	import Nav from '$lib/components/Nav.svelte';
+	import CommandPalette from '$lib/monitor/CommandPalette.svelte';
 	import GettingStarted from '$lib/monitor/GettingStarted.svelte';
 	import ServerMenu from '$lib/monitor/ServerMenu.svelte';
 	import StatusBanner from '$lib/monitor/StatusBanner.svelte';
@@ -10,11 +11,16 @@
 
 	let { children }: { children: Snippet } = $props();
 
+	let searching = $state(false);
+
 	$effect(() => server.start());
 </script>
 
 <div class="app">
-	<Nav updateAvailable={server.status?.update_available ?? false}>
+	<Nav
+		updateAvailable={server.status?.update_available ?? false}
+		onsearch={() => (searching = true)}
+	>
 		{#snippet serverControl()}<ServerMenu />{/snippet}
 	</Nav>
 	<StatusBanner />
@@ -25,6 +31,7 @@
 		{/if}
 		{@render children()}
 	</main>
+	<CommandPalette bind:open={searching} />
 </div>
 
 <style>
