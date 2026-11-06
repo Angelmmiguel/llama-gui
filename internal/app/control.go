@@ -13,6 +13,7 @@ import (
 	"github.com/Angelmmiguel/llama-gui/internal/hardware"
 	"github.com/Angelmmiguel/llama-gui/internal/logs"
 	"github.com/Angelmmiguel/llama-gui/internal/profiles"
+	"github.com/Angelmmiguel/llama-gui/internal/releases"
 	"github.com/Angelmmiguel/llama-gui/internal/supervisor"
 )
 
@@ -237,27 +238,62 @@ func (c *control) applyActive(ctx context.Context) {
 }
 
 // firstStart installs a build if there is none and then starts the router. It
-// blocks for as long as the download takes, so it runs in the background.
+// blocks for as long as the download takes, so it runs in the background. A failed
+// install is retried, because the usual causes pass: GitHub's rate limit is shared by
+// everyone behind an address, and a server often boots before its network.
 func (c *control) firstStart(ctx context.Context, version, backend string) {
 	before, _ := c.mgr.Active(ctx)
 	if backend != builds.AutoBackend {
 		backend = resolveBackend(ctx, backend, c.hw)
 	}
-	if err := c.mgr.EnsureFirstInstall(ctx, version, backend); err != nil {
+	for attempt := 0; ; attempt++ {
+		err := c.mgr.EnsureFirstInstall(ctx, version, backend)
+		if err == nil {
+			break
+		}
 		if ctx.Err() != nil {
 			return
 		}
-		c.log.Warn("first install failed", "error", err)
-		c.pipe.Event(eventBuildInstallFailed, logs.SeverityError, "Installing "+version+" failed", map[string]string{"version": version, "error": err.Error()})
-	} else if after, _ := c.mgr.Active(ctx); after != before && after != "" {
+		delay := installRetryDelay(err, attempt, time.Now())
+		c.log.Warn("first install failed", "error", err, "retry_in", delay)
+		if attempt == 0 {
+			c.pipe.Event(eventBuildInstallFailed, logs.SeverityError, "Installing "+version+" failed", map[string]string{"version": version, "error": err.Error()})
+			// With no build this leaves the router stopped, with the reason in its status.
+			c.startIfBuilt(ctx)
+		}
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			return
+		}
+		// Someone installed a build by hand in the meantime; that path started the router.
+		if now, _ := c.mgr.Active(ctx); now != before && now != "" {
+			return
+		}
+	}
+	if after, _ := c.mgr.Active(ctx); after != before && after != "" {
 		c.pipe.Event(eventBuildInstalled, logs.SeverityInfo, "Installed "+after, map[string]string{"build": after})
 		c.applyRetention(ctx)
 		c.applyActive(ctx)
 	}
-	// With no build this leaves the router stopped, with the reason in its status.
-	if err := c.sup.Start(ctx); err != nil && !errors.Is(err, supervisor.ErrNoBuild) && !errors.Is(err, supervisor.ErrStopped) && ctx.Err() == nil {
+	c.startIfBuilt(ctx)
+}
+
+// startIfBuilt starts the router; having no build yet is expected here.
+func (c *control) startIfBuilt(ctx context.Context) {
+	if err := c.sup.Start(ctx); err != nil && !errors.Is(err, supervisor.ErrNoBuild) {
 		c.log.Warn("starting llama-server", "error", err)
 	}
+}
+
+// installRetryDelay waits out a rate limit, and otherwise doubles from a minute up to
+// half an hour.
+func installRetryDelay(err error, attempt int, now time.Time) time.Duration {
+	var limited *releases.RateLimitError
+	if errors.As(err, &limited) && limited.Reset.After(now) {
+		return limited.Reset.Sub(now) + 5*time.Second
+	}
+	return min(time.Minute<<min(attempt, 5), 30*time.Minute)
 }
 
 // liveProfiles tells a running router when the preset changes.

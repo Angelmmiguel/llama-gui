@@ -1,10 +1,15 @@
 package app
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/Angelmmiguel/llama-gui/internal/releases"
 )
 
 // stubs records which handler a request reached and the path it saw.
@@ -165,6 +170,24 @@ func TestRedirects(t *testing.T) {
 		}
 		if *hit != "" {
 			t.Errorf("%s reached %s", tc.target, *hit)
+		}
+	}
+}
+
+func TestInstallRetryDelay(t *testing.T) {
+	now := time.Unix(1000, 0)
+	limited := fmt.Errorf("resolve: %w", &releases.RateLimitError{Reset: now.Add(20 * time.Minute)})
+	if got, want := installRetryDelay(limited, 0, now), 20*time.Minute+5*time.Second; got != want {
+		t.Errorf("rate limited: %v, want %v", got, want)
+	}
+	expired := &releases.RateLimitError{Reset: now.Add(-time.Minute)}
+	if got := installRetryDelay(expired, 0, now); got != time.Minute {
+		t.Errorf("lifted rate limit: %v", got)
+	}
+	other := errors.New("no network")
+	for attempt, want := range map[int]time.Duration{0: time.Minute, 2: 4 * time.Minute, 5: 30 * time.Minute, 60: 30 * time.Minute} {
+		if got := installRetryDelay(other, attempt, now); got != want {
+			t.Errorf("attempt %d: %v, want %v", attempt, got, want)
 		}
 	}
 }
