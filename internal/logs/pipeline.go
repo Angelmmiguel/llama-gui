@@ -62,8 +62,8 @@ type Pipeline struct {
 	dropMu  sync.Mutex
 	dropped int64
 
-	// mu covers a batch's insert and publish, so a Tail's backlog query and
-	// subscription see each line exactly once.
+	// mu covers a batch's insert and publish together, which is what lets Tail
+	// tell apart the lines its backlog query saw.
 	mu      sync.Mutex
 	subs    map[int]chan Item
 	nextSub int
@@ -255,25 +255,56 @@ func (p *Pipeline) publish(it Item) {
 // falls too far behind. The function ends the subscription.
 func (p *Pipeline) Tail(ctx context.Context, f store.LogFilter) ([]store.LogLine, <-chan Item, func(), error) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	lines, _, err := p.opts.Store.ListLogLines(ctx, f)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	backlog := make([]store.LogLine, len(lines))
-	for i, l := range lines {
-		backlog[len(lines)-1-i] = l
-	}
 	id := p.nextSub
 	p.nextSub++
 	ch := make(chan Item, subscriberBuffer)
 	p.subs[id] = ch
-	return backlog, ch, func() {
+	p.mu.Unlock()
+	stop := func() {
 		p.mu.Lock()
 		defer p.mu.Unlock()
 		if _, ok := p.subs[id]; ok {
 			delete(p.subs, id)
 			close(ch)
 		}
-	}, nil
+	}
+
+	// Outside the lock: a substring filter scans the whole table, and write must not wait for it.
+	lines, _, err := p.opts.Store.ListLogLines(ctx, f)
+	if err != nil {
+		stop()
+		return nil, nil, nil, err
+	}
+	backlog := make([]store.LogLine, len(lines))
+	for i, l := range lines {
+		backlog[len(lines)-1-i] = l
+	}
+	var newest int64
+	if len(lines) > 0 {
+		newest = lines[0].ID
+	}
+	return backlog, p.dropSeen(id, ch, newest), stop, nil
+}
+
+// dropSeen removes the lines a backlog already holds from a subscription nobody reads
+// yet. Taking the lock means any batch the backlog saw has finished publishing, so
+// nothing up to newest can arrive later. A line that failed to store has no ID and
+// cannot be in a backlog.
+func (p *Pipeline) dropSeen(id int, ch chan Item, newest int64) <-chan Item {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if _, live := p.subs[id]; !live {
+		// It overflowed during the query. What it buffered can't be filtered once
+		// closed, and the reader is about to reconnect anyway.
+		gone := make(chan Item)
+		close(gone)
+		return gone
+	}
+	for range len(ch) {
+		it := <-ch
+		if it.Line == nil || it.Line.ID == 0 || it.Line.ID > newest {
+			ch <- it
+		}
+	}
+	return ch
 }
