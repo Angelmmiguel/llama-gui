@@ -1079,7 +1079,7 @@
 			var(--border-row) 65%
 		);
 		background-size: 300% 100%;
-		animation: shimmer 1.4s ease-in-out infinite;
+		animation: shimmer 3.5s ease-in-out infinite;
 		animation-delay: var(--delay);
 	}
 
