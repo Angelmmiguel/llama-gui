@@ -472,3 +472,14 @@ func (s *syncBuffer) String() string {
 	defer s.mu.Unlock()
 	return s.b.String()
 }
+
+func TestOnLineDropsRouterForwardingNoise(t *testing.T) {
+	p, st := newPipeline(t, nil)
+	p.OnLine(`{"type":"log","time":1,"level":"info","msg":"srv  proxy_reques: proxying request to model m on port 5\n"}`, at)
+	p.OnLine(`{"type":"log","time":2,"level":"info","msg":"srv  other: kept\n"}`, at)
+	p.drain()
+	lines, _, err := st.ListLogLines(context.Background(), store.LogFilter{})
+	if err != nil || len(lines) != 1 || !strings.Contains(lines[0].Message, "kept") {
+		t.Fatalf("lines = %+v, err = %v", lines, err)
+	}
+}

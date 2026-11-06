@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -103,6 +104,11 @@ func NewPipeline(o PipelineOptions) *Pipeline {
 // a stalled disk must not back up into the router's stdout.
 func (p *Pipeline) OnLine(raw string, at time.Time) {
 	line := p.parser.Parse(raw, at, p.modelForPort)
+	// The router logs every request it forwards, and those are mostly the 1 Hz polling of
+	// /slots and /metrics; real requests are recorded by the proxy anyway.
+	if strings.Contains(line.Message, "proxying request to model") {
+		return
+	}
 	stored := store.LogLine{TS: at, Level: line.Level, Source: line.Source, Model: line.Model, Message: line.Message, Raw: line.Raw}
 	p.enqueue(queued{line: &stored})
 	for _, e := range p.det.Observe(line) {
