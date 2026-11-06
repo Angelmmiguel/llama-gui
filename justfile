@@ -81,3 +81,8 @@ web-e2e: web-build
 [working-directory('web')]
 web-build:
     pnpm build
+
+# Run the real service over the fake llama-server, with emulated GPUs, sample
+# models and steady traffic, so every page has live data without a GPU.
+demo *args: web-build
+    go run ./cmd/llama-gui-demo --dir ./tmp/demo {{args}}

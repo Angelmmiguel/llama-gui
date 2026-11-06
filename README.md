@@ -8,8 +8,8 @@ llama.cpp, manages your models and launch profiles, and sits in front of
 read every log line. Deploy it as a container, point your clients at it, and
 never touch a `llama-server` command line again.
 
-> **Status:** planning. No code exists yet, and this README describes the target.
-> [PLAN.md](PLAN.md) tracks the work.
+> **Status:** early. Every page works and is tested against a real CPU build of llama.cpp. GPU backends,
+> the Unraid template and replay in the Web UI are still to come; [PLAN.md](PLAN.md) tracks the work.
 
 ## Features
 
@@ -171,6 +171,7 @@ just test          # go test -race and vitest
 just lint          # go vet, golangci-lint, svelte-check, eslint, prettier
 just build         # bin/llama-gui with the web app embedded
 just image         # the container image
+just demo          # the real service over a fake llama-server: emulated GPUs, sample models, traffic
 ```
 
 ## License
