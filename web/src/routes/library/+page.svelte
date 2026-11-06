@@ -473,10 +473,9 @@
 		label="Search models"
 		bind:value={query}
 		placeholder={tab === 'hub'
-			? 'Search Hugging Face or paste a repo, e.g. unsloth/Qwen3-32B-GGUF'
+			? 'Search Hugging Face or paste a repo, e.g. unsloth/Qwen3.8-27B-GGUF'
 			: 'Filter your models'}
-		minWidth="280px"
-		flex="1 1 280px"
+		flex="1 1 auto"
 		oninput={onQuery}
 	/>
 {/snippet}
@@ -786,7 +785,6 @@
 	subtitle={tab === 'hub'
 		? 'Every GGUF on Hugging Face, checked against your hardware before you download'
 		: `Models stored in ${disk?.path ?? 'the models directory'} on this machine`}
-	actions={search}
 />
 
 <div class="views" role="tablist" aria-label="Library view">
@@ -848,6 +846,8 @@
 		>
 	</button>
 </div>
+
+<div class="search-row">{@render search()}</div>
 
 {#if notice}
 	<p class={['notice', { failed: notice.failed }]} role={notice.failed ? 'alert' : 'status'}>
@@ -1169,6 +1169,10 @@
 {/if}
 
 <style>
+	.search-row {
+		display: flex;
+	}
+
 	.views {
 		display: flex;
 		flex-wrap: wrap;
