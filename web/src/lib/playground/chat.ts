@@ -15,7 +15,8 @@ export interface Settings {
 	slot: string;
 	stream: boolean;
 	cachePrompt: boolean;
-	showReasoning: boolean;
+	/** Empty for the template's default. Only offered when the model's template takes one. */
+	reasoningEffort: string;
 }
 
 export const NUMBER_FIELDS = [
@@ -39,7 +40,7 @@ export const emptySettings = (): Settings => ({
 	slot: '',
 	stream: true,
 	cachePrompt: true,
-	showReasoning: false
+	reasoningEffort: ''
 });
 
 /** Clears what falls back to the profile, and keeps what is not a sampling setting. */
@@ -48,8 +49,7 @@ export const withProfileDefaults = (s: Settings): Settings => ({
 	system: s.system,
 	slot: s.slot,
 	stream: s.stream,
-	cachePrompt: s.cachePrompt,
-	showReasoning: s.showReasoning
+	cachePrompt: s.cachePrompt
 });
 
 export interface Timings {
@@ -118,7 +118,26 @@ export function buildRequest(
 	}
 	const slot = number(settings.slot);
 	if (slot !== undefined) body.id_slot = slot;
+	if (settings.reasoningEffort) body.reasoning_effort = settings.reasoningEffort;
 	return body;
+}
+
+/** When a template takes an effort but names no levels: the ones every such template understands. */
+const COMMON_EFFORTS = ['low', 'medium', 'high'];
+
+/**
+ * The reasoning efforts a model's chat template takes, from its /props, or null if it takes none.
+ * The server accepts any word without complaint, so only what is listed here should be offered.
+ */
+export function reasoningEfforts(props: unknown): string[] | null {
+	const caps = (props as { chat_template_caps?: Record<string, unknown> } | null)
+		?.chat_template_caps;
+	if (caps?.supports_reasoning_effort !== true) return null;
+	const levels = caps.reasoning_effort_levels;
+	const named = Array.isArray(levels)
+		? levels.filter((l): l is string => typeof l === 'string' && l !== '')
+		: [];
+	return named.length > 0 ? named : COMMON_EFFORTS;
 }
 
 export function curlFor(origin: string, body: ChatRequest): string {

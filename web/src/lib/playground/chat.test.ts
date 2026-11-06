@@ -6,6 +6,7 @@ import {
 	curlFor,
 	delayBars,
 	emptySettings,
+	reasoningEfforts,
 	SseParser,
 	speedOf,
 	statsLine,
@@ -193,5 +194,54 @@ describe('showing the numbers', () => {
 		expect(bars[0].spike).toBe(false);
 		expect(delayBars(undefined)).toEqual([]);
 		expect(delayBars(Array.from({ length: 100 }, () => 1))).toHaveLength(60);
+	});
+});
+
+describe('reasoning effort', () => {
+	const caps = (chat_template_caps: unknown) => ({ chat_template_caps });
+
+	it('follows what the template says, from a real capture without it', () => {
+		const real = caps({ supports_reasoning_effort: false, reasoning_effort_levels: [] });
+		expect(reasoningEfforts(real)).toBeNull();
+	});
+
+	it('offers the levels the template names', () => {
+		const props = caps({
+			supports_reasoning_effort: true,
+			reasoning_effort_levels: ['low', 'max']
+		});
+		expect(reasoningEfforts(props)).toEqual(['low', 'max']);
+	});
+
+	it('falls back to the common levels when it names none', () => {
+		const props = caps({ supports_reasoning_effort: true, reasoning_effort_levels: [] });
+		expect(reasoningEfforts(props)).toEqual(['low', 'medium', 'high']);
+		expect(reasoningEfforts(caps({ supports_reasoning_effort: true }))).toEqual([
+			'low',
+			'medium',
+			'high'
+		]);
+	});
+
+	it.each([[null], [{}], ['nonsense'], [caps(null)], [caps({ supports_reasoning_effort: 'yes' })]])(
+		'knows nothing from %j',
+		(props) => {
+			expect(reasoningEfforts(props)).toBeNull();
+		}
+	);
+
+	it('ignores levels it cannot use', () => {
+		const props = caps({
+			supports_reasoning_effort: true,
+			reasoning_effort_levels: ['high', 3, '']
+		});
+		expect(reasoningEfforts(props)).toEqual(['high']);
+	});
+
+	it('sends an effort only when one is picked, and resets with the profile defaults', () => {
+		expect(buildRequest(emptySettings(), 'm', [user]).reasoning_effort).toBeUndefined();
+		const picked = { ...emptySettings(), reasoningEffort: 'high' };
+		expect(buildRequest(picked, 'm', [user]).reasoning_effort).toBe('high');
+		expect(withProfileDefaults(picked).reasoningEffort).toBe('');
 	});
 });

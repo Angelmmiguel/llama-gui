@@ -795,6 +795,13 @@ export const getLibraryRepo = (repo: string, query: FitQuery, signal?: AbortSign
 		query: { ...query, repo },
 		signal
 	});
+/** A loaded model's own /props, straight from the router, as its shape is upstream's to change. */
+export async function getModelProps(model: string, signal?: AbortSignal): Promise<unknown> {
+	const res = await fetch(`/props?${new URLSearchParams({ model })}`, { signal });
+	if (!res.ok) throw new Error(`/props answered ${res.status}`);
+	return res.json();
+}
+
 /** Per variant: heads, companion, none or unknown; tolerate others. */
 export const getLibraryRepoMTP = (repo: string, signal?: AbortSignal) =>
 	request<{ variants: Record<string, string> }>('GET', '/library/repo/mtp', {

@@ -3,6 +3,7 @@
 	import { resolve } from '$app/paths';
 	import {
 		getLibraryLocal,
+		getModelProps,
 		listModels,
 		listProfiles,
 		loadModel,
@@ -30,6 +31,7 @@
 		curlFor,
 		delayBars,
 		NUMBER_FIELDS,
+		reasoningEfforts,
 		speedOf,
 		statsLine,
 		timingsGrid,
@@ -56,6 +58,8 @@
 	let loadError = $state('');
 	let requested = $state.raw<ReadonlySet<string>>(new Set());
 	let thread = $state<HTMLElement>();
+	// What the selected model's template takes, null when it takes none or isn't known yet.
+	let efforts = $state.raw<string[] | null>(null);
 
 	$effect(() => telemetry.subscribe());
 
@@ -91,6 +95,26 @@
 		} else if (!selected) {
 			chat.model = ready[0]?.id ?? '';
 		}
+	});
+
+	const selectedId = $derived(selected?.id);
+	$effect(() => {
+		const id = selectedId;
+		efforts = null;
+		if (!id) {
+			chat.settings.reasoningEffort = '';
+			return;
+		}
+		const controller = new AbortController();
+		getModelProps(id, controller.signal)
+			.then(reasoningEfforts)
+			.catch(() => null)
+			.then((levels) => {
+				if (controller.signal.aborted) return;
+				efforts = levels;
+				if (!levels?.includes(chat.settings.reasoningEffort)) chat.settings.reasoningEffort = '';
+			});
+		return () => controller.abort();
 	});
 
 	const loading = $derived(dockCells(models, profiles, local).filter((c) => c.loading));
@@ -216,6 +240,19 @@
 			bind:value={chat.settings.slot}
 		/>
 
+		{#if efforts}
+			<SelectField
+				label="Reasoning effort"
+				flag="reasoning_effort"
+				mono
+				options={[
+					{ value: '', label: 'template default' },
+					...efforts.map((value) => ({ value, label: value }))
+				]}
+				bind:value={chat.settings.reasoningEffort}
+			/>
+		{/if}
+
 		<label class="field label">
 			System prompt
 			<textarea rows="4" bind:value={chat.settings.system}></textarea>
@@ -265,11 +302,6 @@
 				label="Reuse prompt cache"
 				flag="cache_prompt"
 				bind:checked={chat.settings.cachePrompt}
-			/>
-			<Switch
-				label="Show reasoning"
-				flag="reasoning_content"
-				bind:checked={chat.settings.showReasoning}
 			/>
 		</div>
 	</aside>
@@ -374,15 +406,14 @@
 						<div class="message">
 							<span class="who">{m.model}</span>
 							{#if m.reasoning}
-								{#if chat.settings.showReasoning}
-									<div class="reasoning open">{m.reasoning}</div>
-								{:else}
-									<span class="reasoning">
+								<details class="thinking">
+									<summary>
 										{m.thoughtMs === undefined
 											? 'Thinking…'
-											: `Thought for ${(m.thoughtMs / 1000).toFixed(1)} s`} · reasoning_content hidden
-									</span>
-								{/if}
+											: `Thought for ${(m.thoughtMs / 1000).toFixed(1)} s`}
+									</summary>
+									<div class="thinking-text">{m.reasoning}</div>
+								</details>
 							{/if}
 							{#if view === 'tokens' && m.chunks?.length}
 								<div class="reply">
@@ -928,16 +959,30 @@
 		background: color-mix(in srgb, var(--color-prefill) 16%, transparent);
 	}
 
-	.reasoning {
-		padding-left: var(--space-10);
-		border-left: 2px solid var(--border-ghost);
+	.thinking {
+		max-width: 100%;
 		font-size: var(--fs-12);
 		color: var(--fg-muted);
 	}
 
-	.reasoning.open {
-		white-space: pre-wrap;
+	.thinking summary {
+		width: fit-content;
+		min-height: 28px;
+		line-height: 28px;
+		cursor: pointer;
+	}
+
+	.thinking summary:hover {
+		color: var(--fg-secondary);
+	}
+
+	.thinking-text {
+		margin-top: var(--space-4);
+		padding-left: var(--space-10);
+		border-left: 2px solid var(--border-ghost);
 		line-height: 1.55;
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
 	}
 
 	.stats {

@@ -487,3 +487,63 @@ test('a Library search shows it is working from the first keystroke', async ({ p
 	await expect(skeleton).toHaveCount(0);
 	await expect(main.getByRole('heading', { name: /SEARCHING FOR/ })).toHaveCount(0);
 });
+
+test('the Playground offers reasoning effort only when the template takes it, and folds the thinking', async ({
+	page,
+	request
+}) => {
+	await request.post(`${server.url}/api/v1/models/qwen3-coder/load`);
+	await expect(async () => {
+		const models = (await (await request.get(`${server.url}/api/v1/models`)).json()).models;
+		expect(models.find((m: { id: string }) => m.id === 'qwen3-coder').status).toBe('loaded');
+	}).toPass({ timeout: 30_000 });
+
+	let supported = false;
+	await page.route('**/props?*', (route) =>
+		route.fulfill({
+			json: {
+				chat_template_caps: {
+					supports_reasoning_effort: supported,
+					reasoning_effort_levels: supported ? ['low', 'high'] : []
+				}
+			}
+		})
+	);
+	let sent: Record<string, unknown> = {};
+	await page.route('**/v1/chat/completions', async (route) => {
+		sent = route.request().postDataJSON();
+		const chunk = (delta: object, extra = {}) =>
+			`data: ${JSON.stringify({ choices: [{ delta, finish_reason: null, ...extra }] })}\n\n`;
+		await route.fulfill({
+			contentType: 'text/event-stream',
+			body:
+				chunk({ reasoning_content: 'Let me think.' }) +
+				chunk({ content: 'The answer.' }) +
+				chunk({}, { finish_reason: 'stop' }) +
+				'data: [DONE]\n\n'
+		});
+	});
+
+	await open(page, '/playground', 'Playground');
+	const settings = page.getByRole('complementary', { name: 'REQUEST SETTINGS' });
+	await page.getByRole('radio', { name: /qwen3-coder/ }).click();
+	await expect(settings.getByText('Reasoning effort')).toHaveCount(0);
+	await expect(settings.getByText('Show reasoning')).toHaveCount(0);
+
+	supported = true;
+	await page.reload();
+	await page.getByRole('radio', { name: /qwen3-coder/ }).click();
+	await settings.getByLabel(/Reasoning effort/).selectOption('high');
+
+	const message = page.getByLabel('Message', { exact: true });
+	await message.fill('Why?');
+	await message.press('Enter');
+	const chat = page.getByRole('region', { name: 'Chat' });
+	await expect(chat.getByText('The answer.')).toBeVisible();
+	expect(sent.reasoning_effort).toBe('high');
+
+	const thinking = chat.getByText('Let me think.');
+	await expect(thinking).toBeHidden();
+	await chat.getByText(/Thought for/).click();
+	await expect(thinking).toBeVisible();
+});
