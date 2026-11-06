@@ -40,6 +40,13 @@ export function binaryTag(r: Pick<AvailableRelease, 'tag' | 'binary_tag'>): stri
 	return buildNumber(r.tag) !== null ? r.tag : null;
 }
 
+/** What the hero says with nothing active: on a first run, or with builds to switch to. */
+export function noBuildState(installed: number): { heading: string; meta: string } {
+	return installed > 0
+		? { heading: 'NO BUILD ACTIVE', meta: 'Nothing is running: switch to an installed build.' }
+		: { heading: 'NO BUILD INSTALLED', meta: 'Nothing to run yet: install a build.' };
+}
+
 export type TargetState = 'none' | 'newer' | 'same' | 'older' | 'unknown';
 
 /** Where a target stands against what runs. */

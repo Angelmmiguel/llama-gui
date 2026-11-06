@@ -21,6 +21,7 @@ import {
 	isRunning,
 	jobPercent,
 	matchedKeywords,
+	noBuildState,
 	normalizeTag,
 	plainNotes,
 	rateLimitReset,
@@ -73,6 +74,15 @@ describe('ago', () => {
 		expect(checkLabel({ available: false, checked_at: '2026-11-06T11:56:00Z' }, NOW)).toBe(
 			'Check for updates · 4 min ago'
 		);
+	});
+});
+
+describe('noBuildState', () => {
+	it('tells a first run apart from builds waiting to be switched to', () => {
+		expect(noBuildState(0).heading).toBe('NO BUILD INSTALLED');
+		expect(noBuildState(0).meta).toContain('install a build');
+		expect(noBuildState(2).heading).toBe('NO BUILD ACTIVE');
+		expect(noBuildState(2).meta).toContain('switch to an installed build');
 	});
 });
 

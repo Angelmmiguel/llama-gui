@@ -51,6 +51,7 @@
 		isRunning,
 		jobLine,
 		jobPercent,
+		noBuildState,
 		normalizeTag,
 		updateSteps,
 		upstreamProblem,
@@ -121,10 +122,11 @@
 	const busy = $derived(!!runningJob || swapState === 'switching');
 	const steps = $derived(updateSteps(job, { state: swapState, meta: swapMeta }));
 
+	const noBuild = $derived(noBuildState(builds.length));
 	const heroLabel = $derived.by(() => {
 		if (swapState === 'switching') return 'SWITCHING…';
-		if (runningJob) return 'UPDATING…';
-		if (!active) return 'NO BUILD INSTALLED';
+		if (runningJob) return active ? 'UPDATING…' : 'INSTALLING…';
+		if (!active) return noBuild.heading;
 		if (!target) return 'RUNNING';
 		if (upToDate) return 'UP TO DATE';
 		switch (standing) {
@@ -441,9 +443,9 @@
 		<SectionHeading id="up-h" title={heroLabel} />
 		<div class="versions">
 			<div class="version">
-				<span class="label">Running</span>
+				<span class="label">{active ? 'Running' : 'No build'}</span>
 				<Metric value={active?.tag ?? '—'} size={40} />
-				<span class="meta">{runningMeta || 'Nothing to run yet: install a build.'}</span>
+				<span class="meta">{runningMeta || noBuild.meta}</span>
 			</div>
 			{#if target}
 				<svg
