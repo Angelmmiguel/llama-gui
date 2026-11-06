@@ -94,3 +94,40 @@ export async function startServer(): Promise<TestServer> {
 	}
 	return { url, stop };
 }
+
+/**
+ * Runs cmd/llama-gui-demo: the real server over the fake llama-server, with
+ * emulated GPUs, sample models and steady traffic. Ready once its models are loaded.
+ */
+export async function startDemo(): Promise<TestServer> {
+	const root = mkdtempSync(join(tmpdir(), 'llama-gui-demo-'));
+	const port = await freePort();
+	const url = `http://127.0.0.1:${port}`;
+	const child = spawn(
+		'go',
+		['run', './cmd/llama-gui-demo', '--addr', `127.0.0.1:${port}`, '--dir', root],
+		{ cwd: REPO_ROOT, detached: true, stdio: ['ignore', 'pipe', 'pipe'] }
+	);
+	let log = '';
+	child.stdout.on('data', (chunk) => (log += chunk));
+	child.stderr.on('data', (chunk) => (log += chunk));
+
+	const stop = async () => {
+		if (child.pid !== undefined && child.exitCode === null) {
+			const exited = new Promise((r) => child.once('exit', r));
+			process.kill(-child.pid, 'SIGTERM');
+			await exited;
+		}
+		rmSync(root, { recursive: true, force: true });
+	};
+
+	const deadline = Date.now() + READY_TIMEOUT_MS;
+	while (!log.includes('demo ready')) {
+		if (child.exitCode !== null || Date.now() > deadline) {
+			await stop();
+			throw new Error(`demo did not start:\n${log}`);
+		}
+		await new Promise((r) => setTimeout(r, 200));
+	}
+	return { url, stop };
+}
