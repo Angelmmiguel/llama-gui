@@ -3,6 +3,7 @@ package app
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -14,7 +15,89 @@ func stubs() (http.Handler, *string, *string) {
 			hit, seen = name, r.URL.Path
 		})
 	}
-	return routes(stub("api"), stub("ui"), stub("proxy")), &hit, &seen
+	return routes([]string{"example.com"}, stub("api"), stub("ui"), stub("proxy")), &hit, &seen
+}
+
+func TestHostCheck(t *testing.T) {
+	const message = "add it to LLAMA_GUI_ALLOWED_HOSTS"
+	extra := []string{"llm.example.com"}
+	for _, tc := range []struct {
+		host    string
+		allowed []string
+		ok      bool
+	}{
+		{"127.0.0.1", nil, true},
+		{"127.0.0.1:8080", nil, true},
+		{"192.168.1.20:8080", nil, true},
+		{"[::1]", nil, true},
+		{"[::1]:8080", nil, true},
+		{"[fe80::1%25eth0]:8080", nil, true},
+		{"localhost", nil, true},
+		{"LOCALHOST:8080", nil, true},
+		{"tower", nil, true},
+		{"llama-gui:8080", nil, true},
+		{"tower.local", nil, true},
+		{"Tower.LOCAL:8080", nil, true},
+		{"tower.local.", nil, true},
+		{"a.lan", nil, true},
+		{"a.home", nil, true},
+		{"a.internal", nil, true},
+		{"a.intranet", nil, true},
+		{"a.corp", nil, true},
+		{"a.localdomain", nil, true},
+		{"a.home.arpa", nil, true},
+
+		{"evil.com", nil, false},
+		{"evil.com:8080", nil, false},
+		{"EVIL.com", nil, false},
+		{"evil.com.", nil, false},
+		{"tower.local.evil.com", nil, false},
+		{"127.0.0.1.nip.io", nil, false},
+		{"notlocal", nil, true},
+		{"evillocal.com", nil, false},
+		{"evil.home.com", nil, false},
+		{"arpa.evil", nil, false},
+
+		{"llm.example.com", extra, true},
+		{"LLM.Example.com:443", extra, true},
+		{"other.example.com", extra, false},
+		{"sub.llm.example.com", extra, false},
+		{"anything.example.com", []string{"*"}, true},
+	} {
+		t.Run(tc.host, func(t *testing.T) {
+			for _, path := range []string{"/api/v1/status", "/ui/", "/slots"} {
+				reached := false
+				stub := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { reached = true })
+				r := httptest.NewRequest(http.MethodGet, path, nil)
+				r.Host = tc.host
+				w := httptest.NewRecorder()
+				routes(tc.allowed, stub, stub, stub).ServeHTTP(w, r)
+				if reached != tc.ok {
+					t.Errorf("%s: reached = %v, want %v", path, reached, tc.ok)
+				}
+				if !tc.ok {
+					if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), message) {
+						t.Errorf("%s: %d %q", path, w.Code, w.Body.String())
+					}
+					if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/plain") {
+						t.Errorf("%s: content type %q", path, ct)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestHostCheckNamesTheHostWithoutThePort(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Host = "Evil.com:8080"
+	w := httptest.NewRecorder()
+	stub := http.NotFoundHandler()
+	routes(nil, stub, stub, stub).ServeHTTP(w, r)
+	const want = `Host "evil.com" is not allowed; add it to LLAMA_GUI_ALLOWED_HOSTS` + "\n"
+	if w.Body.String() != want {
+		t.Errorf("got %q, want %q", w.Body.String(), want)
+	}
 }
 
 func TestRouteTable(t *testing.T) {

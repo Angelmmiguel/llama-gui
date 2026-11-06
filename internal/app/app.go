@@ -203,7 +203,7 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, ln net.Listen
 	}
 	downloads := library.NewQueue(cfg.Models, hub, nil, func() { ctrl.reloadPreset(ctrlCtx) })
 
-	handler := routes(api.Handler(api.Deps{
+	handler := routes(cfg.AllowedHosts, api.Handler(api.Deps{
 		Version:      cfg.Version,
 		Capture:      cfg.Capture,
 		LogVerbosity: cfg.LogVerbosity,
