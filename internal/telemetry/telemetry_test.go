@@ -348,6 +348,28 @@ func TestHubDropsForSlowReaders(t *testing.T) {
 	}
 }
 
+func TestSpeculationFromSlotsAndCounters(t *testing.T) {
+	slot := func(types string, speculative bool) reading {
+		return reading{
+			slots:   []llama.Slot{{ID: 0, Speculative: speculative, Params: map[string]any{"speculative.types": types}}},
+			metrics: map[string]float64{"spec_decode_num_draft_tokens_total": 9952, "spec_decode_num_accepted_tokens_total": 7639},
+		}
+	}
+	got := speculationOf(slot("none,draft-mtp", true))
+	if got == nil || got.Types != "draft-mtp" || got.Drafted != 9952 || got.Accepted != 7639 {
+		t.Errorf("%+v", got)
+	}
+	if got := speculationOf(slot("none", false)); got != nil {
+		t.Errorf("without it: %+v", got)
+	}
+	if got := speculationOf(slot("none", true)); got != nil {
+		t.Errorf("type none: %+v", got)
+	}
+	if got := speculationOf(reading{}); got != nil {
+		t.Errorf("no slots: %+v", got)
+	}
+}
+
 func TestRollUpRecordsFinishedPeriods(t *testing.T) {
 	h := newHarness()
 	var got []Rollup

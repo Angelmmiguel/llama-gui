@@ -231,3 +231,17 @@ describe('disk rows', () => {
 		expect(got.map((r) => r.profile)).toEqual(['b-small', 'a-big']);
 	});
 });
+
+describe('speculation in the dock', () => {
+	it('names it with how much was kept', () => {
+		const m = model('m', 'loaded', 5);
+		m.speculation = { types: 'none,draft-mtp', drafted: 9952, accepted: 7639 };
+		expect(dockCells([m], [], [])[0]).toMatchObject({ speculation: 'MTP', acceptance: '77%' });
+	});
+
+	it('shows nothing without it', () => {
+		const cell = dockCells([model('m', 'loaded', 5)], [], [])[0];
+		expect(cell.speculation).toBeUndefined();
+		expect(cell.acceptance).toBeUndefined();
+	});
+});

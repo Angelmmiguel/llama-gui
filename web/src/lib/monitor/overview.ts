@@ -438,6 +438,30 @@ export function clock(iso: string): string {
 
 /** The mono line under a router model's name. */
 
+const SPECULATION_NAMES: Record<string, string> = {
+	'draft-mtp': 'MTP',
+	'draft-dflash': 'DFlash',
+	'draft-dspark': 'DSpark',
+	'draft-eagle3': 'EAGLE-3',
+	'draft-simple': 'Draft',
+	draft: 'Draft'
+};
+
+/** A short name for a --spec-type list, such as MTP. Unknown types show as they are. */
+export function speculationName(types: string): string {
+	const names = types
+		.split(',')
+		.map((t) => t.trim())
+		.filter((t) => t && t !== 'none')
+		.map((t) => SPECULATION_NAMES[t] ?? (t.startsWith('ngram') ? 'N-gram' : t));
+	return [...new Set(names)].join(' + ');
+}
+
+/** The share of drafted tokens the model kept, or undefined before there are any. */
+export function acceptanceLabel(accepted: number, drafted: number): string | undefined {
+	return drafted > 0 ? `${Math.round((accepted / drafted) * 100)}%` : undefined;
+}
+
 /** The chart ranges. `1m` is the live stream, and the others come from the stored history. */
 export const CHART_RANGES = [
 	{ value: '1m', label: '1m', note: 'last 60 s', ticks: ['−60s', '−45s', '−30s', '−15s', 'now'] },

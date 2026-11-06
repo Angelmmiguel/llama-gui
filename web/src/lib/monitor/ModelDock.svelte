@@ -137,6 +137,7 @@
 						></span>
 						<span class="name ellipsis">{cell.id}</span>
 						{#if cell.quant}<Tag>{cell.quant}</Tag>{/if}
+						{#if cell.speculation}<Tag>{cell.speculation}</Tag>{/if}
 						{#if !cell.loading}
 							<span class="unload">
 								<Button
@@ -169,6 +170,7 @@
 								{/each}
 							</span>
 							<span>{cell.sleeping ? 'sleeping' : `${cell.busy}/${cell.slots} busy`}</span>
+							{#if cell.acceptance}<span>{cell.acceptance} accepted</span>{/if}
 							<span class="usage">{formatBytes(cell.memory)} · {cell.role}</span>
 						</div>
 					{/if}

@@ -7,10 +7,18 @@
 	import SectionHeading from '$lib/components/SectionHeading.svelte';
 	import StackedBar from '$lib/components/StackedBar.svelte';
 	import StateLabel from '$lib/components/StateLabel.svelte';
+	import Tag from '$lib/components/Tag.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import { tones } from '$lib/components/tones';
 	import { formatTokens } from '$lib/format';
-	import { contextSummary, slotActivity, slotFill, stateTone, type ModelSlot } from './overview';
+	import {
+		contextSummary,
+		slotActivity,
+		slotFill,
+		speculationName,
+		stateTone,
+		type ModelSlot
+	} from './overview';
 
 	interface Props {
 		slots: readonly ModelSlot[];
@@ -55,7 +63,12 @@
 			{#each slots as s (`${s.model}/${s.id}`)}
 				<Row columns="150px 104px minmax(0, 1fr) 150px" padding="11px 0">
 					<div class="name">
-						<span class="id">slot {s.id}</span>
+						<span class="id">
+							slot {s.id}
+							{#if s.speculative}<Tag
+									>{speculationName(String(s.params?.['speculative.types'] ?? '')) || 'draft'}</Tag
+								>{/if}
+						</span>
 						<span class="model ellipsis">{s.model}</span>
 					</div>
 					<StateLabel color={stateTone(s.state)}>{s.state}</StateLabel>

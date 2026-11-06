@@ -7,7 +7,7 @@ import type {
 	TelemetryModel
 } from '$lib/api/client';
 import { formatBytes } from '$lib/format';
-import { quantOf } from './overview';
+import { acceptanceLabel, quantOf, speculationName } from './overview';
 
 /** A model that holds memory, one cell of the dock. */
 export interface DockCell {
@@ -21,6 +21,10 @@ export interface DockCell {
 	role: string;
 	/** On disk, for a model still loading: upstream reports no progress to show instead. */
 	fileBytes?: number;
+	/** Such as MTP, when the model drafts tokens. */
+	speculation?: string;
+	/** The share of its drafts it kept since loading. */
+	acceptance?: string;
 	error?: string;
 }
 
@@ -101,6 +105,8 @@ export function dockCells(
 				memory: m.memory.total,
 				role: roleOf(profile),
 				fileBytes: localOf(profile?.model_file, local)?.size_bytes,
+				speculation: m.speculation && speculationName(m.speculation.types),
+				acceptance: m.speculation && acceptanceLabel(m.speculation.accepted, m.speculation.drafted),
 				error: m.error
 			};
 		});

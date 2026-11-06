@@ -22,6 +22,7 @@
 		allSlots,
 		prefillPercent,
 		slotFill,
+		speculationName,
 		stateTone,
 		type ModelSlot
 	} from '$lib/monitor/overview';
@@ -128,7 +129,13 @@
 			{ label: 'cached prefix', value: formatInt(fill.cached) },
 			{ label: 'prompt tokens', value: formatInt(fill.prompt) },
 			{ label: 'generated', value: formatInt(fill.generated) },
-			{ label: 'speed', value: s.state === 'decode' ? `${s.speed.toFixed(1)} t/s` : '—' }
+			{ label: 'speed', value: s.state === 'decode' ? `${s.speed.toFixed(1)} t/s` : '—' },
+			{
+				label: 'speculation',
+				value: s.speculative
+					? speculationName(String(s.params?.['speculative.types'] ?? '')) || 'on'
+					: 'off'
+			}
 		];
 	});
 

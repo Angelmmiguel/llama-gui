@@ -318,6 +318,16 @@ export interface Slot {
 	task: number | null;
 	speed: number;
 	params?: Record<string, unknown>;
+	/** The slot drafts tokens ahead of the model. */
+	speculative?: boolean;
+}
+
+export interface Speculation {
+	/** Such as draft-mtp; a comma-separated list when combined. */
+	types: string;
+	/** Since the model loaded. */
+	drafted: number;
+	accepted: number;
 }
 
 /** A model as sampled. Memory is flattened from the router's `memory.effective`. */
@@ -326,6 +336,7 @@ export interface TelemetryModel {
 	status: string;
 	memory: { total: number; devices: MemoryDevice[] };
 	slots: Slot[];
+	speculation?: Speculation;
 	/** Why this tick could not read the model; slots then hold the last good reading. */
 	error?: string;
 }

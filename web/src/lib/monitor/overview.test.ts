@@ -7,6 +7,8 @@ import type {
 	TelemetryModel
 } from '$lib/api/client';
 import {
+	acceptanceLabel,
+	speculationName,
 	chartData,
 	allSlots,
 	busiestProfile,
@@ -359,5 +361,21 @@ describe('chartData', () => {
 	it('falls back to the stream until the history arrives', () => {
 		expect(chartData('1h', series, null).peak).toBe(5);
 		expect(chartData('1m', undefined, null).decode).toHaveLength(60);
+	});
+});
+
+describe('speculation', () => {
+	it('names the types shortly, whatever comes', () => {
+		expect(speculationName('draft-mtp')).toBe('MTP');
+		expect(speculationName('none,draft-dflash')).toBe('DFlash');
+		expect(speculationName('ngram-mod,ngram-simple')).toBe('N-gram');
+		expect(speculationName('ngram-mod,draft-mtp')).toBe('N-gram + MTP');
+		expect(speculationName('draft-future')).toBe('draft-future');
+		expect(speculationName('none')).toBe('');
+	});
+
+	it('gives the share kept, from a real run', () => {
+		expect(acceptanceLabel(7639, 9952)).toBe('77%');
+		expect(acceptanceLabel(0, 0)).toBeUndefined();
 	});
 });

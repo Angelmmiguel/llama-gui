@@ -17,6 +17,7 @@ type Slot struct {
 	NProcessed    int
 	NCached       int
 	NDecoded      int // next_token[0].n_decoded
+	Speculative   bool
 	Params        map[string]any
 }
 
@@ -30,6 +31,7 @@ func (s *Slot) UnmarshalJSON(b []byte) error {
 		NProcessed    int            `json:"n_prompt_tokens_processed"`
 		NCached       int            `json:"n_prompt_tokens_cache"`
 		Params        map[string]any `json:"params"`
+		Speculative   bool           `json:"speculative"`
 		NextToken     []struct {
 			NDecoded int `json:"n_decoded"`
 		} `json:"next_token"`
@@ -40,7 +42,7 @@ func (s *Slot) UnmarshalJSON(b []byte) error {
 	*s = Slot{
 		ID: raw.ID, NCtx: raw.NCtx, IsProcessing: raw.IsProcessing,
 		NPromptTokens: raw.NPromptTokens, NProcessed: raw.NProcessed, NCached: raw.NCached,
-		Params: raw.Params,
+		Params: raw.Params, Speculative: raw.Speculative,
 	}
 	if raw.IDTask != nil {
 		s.TaskID, s.HasTask = *raw.IDTask, true

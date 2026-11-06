@@ -9,6 +9,7 @@ import (
 	"maps"
 	"math"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -108,6 +109,8 @@ type Model struct {
 	// Error says why this tick could not read the model; Slots then hold the
 	// last good reading.
 	Error string `json:"error,omitempty"`
+	// Speculation is nil for a model without speculative decoding.
+	Speculation *Speculation `json:"speculation,omitempty"`
 }
 
 // Memory is the measured use of a loaded model, in bytes.
@@ -129,6 +132,16 @@ type Slot struct {
 	Task   *int64         `json:"task"`
 	Speed  float64        `json:"speed"`
 	Params map[string]any `json:"params,omitempty"`
+	// Speculative says the slot drafts tokens ahead of the model.
+	Speculative bool `json:"speculative,omitempty"`
+}
+
+// Speculation is how a model's speculative decoding has gone since it loaded.
+type Speculation struct {
+	// Types is upstream's list without its leading "none", such as draft-mtp.
+	Types    string  `json:"types"`
+	Drafted  float64 `json:"drafted"`
+	Accepted float64 `json:"accepted"`
 }
 
 // Throughput is tokens per second across all models.
@@ -392,6 +405,7 @@ func (s *Sampler) compute(now time.Time, modelsErr error, readings []reading) *S
 			d, p := t.applyMetrics(now, r, snap)
 			decode, prefill = decode+d, prefill+p
 			s.applySlots(now, m.ID, t, r, &out)
+			out.Speculation = speculationOf(r)
 			if err := firstErr(r.slotsErr, r.metricsErr); err != nil {
 				out.Error = err.Error()
 			}
@@ -493,6 +507,22 @@ func tokenRate(prevCounter, counter, prevRunning, running, seconds float64) floa
 	return max(delta+running-prevRunning, 0) / seconds
 }
 
+// speculationOf reads a model's speculation from its slots and counters, nil when it has none.
+func speculationOf(r reading) *Speculation {
+	for _, sl := range r.slots {
+		types, _ := sl.Params[speculativeTypes].(string)
+		types = strings.TrimPrefix(types, "none,")
+		if sl.Speculative && types != "" && types != "none" {
+			return &Speculation{
+				Types:    types,
+				Drafted:  metric(r.metrics, "spec_decode_num_draft_tokens_total"),
+				Accepted: metric(r.metrics, "spec_decode_num_accepted_tokens_total"),
+			}
+		}
+	}
+	return nil
+}
+
 func (s *Sampler) applySlots(now time.Time, model string, t *modelTrack, r reading, out *Model) {
 	if r.slotsErr != nil {
 		out.Slots = t.last
@@ -541,7 +571,7 @@ func (s *Sampler) applySlots(now time.Time, model string, t *modelTrack, r readi
 		tokens := sl.Tokens()
 		slot := Slot{
 			ID: sl.ID, State: state, Cached: tokens.Cached, Prompt: tokens.Prompt, Generated: tokens.Generated,
-			Total: tokens.Total, NCtx: sl.NCtx, Speed: speed, Params: paramSubset(sl.Params),
+			Total: tokens.Total, NCtx: sl.NCtx, Speed: speed, Params: paramSubset(sl.Params), Speculative: sl.Speculative,
 		}
 		if sl.HasTask {
 			task := int64(sl.TaskID)
@@ -555,7 +585,9 @@ func (s *Sampler) applySlots(now time.Time, model string, t *modelTrack, r readi
 
 // paramKeys is an allow list: params can grow new fields, and a future one
 // could carry prompt text.
-var paramKeys = []string{"n_predict", "max_tokens", "temperature", "top_k", "top_p", "min_p", "repeat_penalty", "seed", "stream"}
+const speculativeTypes = "speculative.types"
+
+var paramKeys = []string{speculativeTypes, "n_predict", "max_tokens", "temperature", "top_k", "top_p", "min_p", "repeat_penalty", "seed", "stream"}
 
 func paramSubset(params map[string]any) map[string]any {
 	if len(params) == 0 {
