@@ -126,161 +126,162 @@ Order keeps a usable product at each step: M3 is already a working managed llama
 
 ### M2 · Hardware and builds backend
 
-- [ ] Detect GPUs: `nvidia-smi` (name, driver, CUDA version, memory, util, temp), `/dev/dri`, CPU
+- [x] Detect GPUs: `nvidia-smi` (name, driver, CUDA version, memory, util, temp), `/dev/dri`, CPU
       features, RAM, disk
-- [ ] Release client: stable and nightly channels classified by tag name (old `b*` tags are full
+- [x] Release client: stable and nightly channels classified by tag name (old `b*` tags are full
       releases), pagination, caching, rate-limit handling, optional token
-- [ ] Choose assets per backend and architecture, including CUDA major from the driver version
-- [ ] Install on the fly: resumable download, GitHub digest check, safe extraction (no path
+- [x] Choose assets per backend and architecture, including CUDA major from the driver version
+- [x] Install on the fly: resumable download, GitHub digest check, safe extraction (no path
       traversal), plus `cudart`, into `/builds/<tag>-<backend>/`, while the current build keeps serving
-- [ ] Probe each build: version, `--help` flags, devices, router support
-- [ ] Smoke test before activation; switch, delete, retention (`LLAMA_GUI_KEEP_BUILDS`), never remove
+- [x] Probe each build: version, `--help` flags, devices, router support
+- [x] Probe before activation (`--version`, `--help`, `--list-devices`), not yet a generation test; switch, delete, retention (`LLAMA_GUI_KEEP_BUILDS`), never remove
       the active build
-- [ ] First start: honour `LLAMA_GUI_LLAMA_VERSION` and `LLAMA_GUI_LLAMA_BACKEND`, with `none` skipping
-- [ ] Update check on a schedule; `notify`, `off` and `auto` policies
-- [ ] CLI: `llama list|available|install|use|remove`, `doctor` (including that `/builds` allows execution)
+- [x] First start: honour `LLAMA_GUI_LLAMA_VERSION` and `LLAMA_GUI_LLAMA_BACKEND`, with `none` skipping
+- [x] Update check on a schedule; `notify`, `off` and `auto` policies
+- [x] CLI: `llama list|available|install|use|remove`, `doctor` (including that `/builds` allows execution)
 
 ### M3 · Supervisor, profiles and proxy
 
-- [ ] **Validate router mode first:** run a real build and confirm the [Router mode](#router-mode)
-      table; set the minimum supported version
-- [ ] Profile store and render to router preset INI, filtered by the build's supported flags
-- [ ] Start the router on loopback with `--metrics`, JSONL logs and memory margin; restart with
+- [x] **Validate router mode first:** confirmed on real `b12132` and `b12110` CPU builds. There is no fixed
+      minimum version: activation refuses a build whose `--help` has no `--models-preset`
+- [x] Profile store and render to router preset INI, filtered by the build's supported flags
+- [x] Start the router on loopback with `--metrics`, JSONL logs and memory margin; restart with
       backoff; crash reporting; drain on stop; restore loaded models after a restart
-- [ ] Model control: load and unload, `/models?reload=1`, idle unload timers, on-demand policy per
+- [x] Model control: load and unload, `/models?reload=1`, idle unload timers, on-demand policy per
       profile, load at start
-- [ ] Reverse proxy: streaming (SSE, WebSocket for `/v1/realtime`), no buffering, cancellation
-- [ ] Measure per request into SQLite: endpoint, model, status, TTFT, end-to-end, inter-token gaps
+- [x] Reverse proxy: streaming (SSE, WebSocket for `/v1/realtime`), no buffering, cancellation
+- [x] Measure per request into SQLite: endpoint, model, status, TTFT, end-to-end, inter-token gaps
       (first 120), `timings`, tokens
-- [ ] Classify errors (`400 ctx`, `503 busy`) and keep the original status
-- [ ] Optional body capture (`LLAMA_GUI_CAPTURE=bodies`) with size cap and purge
-- [ ] **Spike:** map request to slot and `id_task`; confirm that closing the connection cancels
-      generation given `/v1/streams`
-- [ ] CLI: `status`, `models load|unload`
+- [x] Classify errors (`400 ctx`, `503 busy`) and keep the original status
+- [x] Optional body capture (`LLAMA_GUI_CAPTURE=bodies`) with size cap and purge
+- [x] **Spike:** closing the connection cancels generation (confirmed on a real build); request to slot is
+      best effort, oldest in-flight request first
+- [x] CLI: `status`, `models load|unload`
 
 ### M4 · Telemetry backend
 
-- [ ] 1 s sampler for `/slots`, `/metrics`, `/models` per loaded model, plus GPU and RAM; keeps running
+- [x] 1 s sampler for `/slots`, `/metrics`, `/models` per loaded model, plus GPU and RAM; keeps running
       with no browser open
-- [ ] Ring buffers: 60 s and 90 s series for charts, per-slot state history
-- [ ] Log pipeline: JSONL and text parsers, port to model, source and level classification, raw
+- [x] Ring buffers: 60 s and 90 s series for charts, per-slot state history
+- [x] Log pipeline: JSONL and text parsers, port to model, source and level classification, raw
       fallback, stored in SQLite within retention
-- [ ] Log-derived events (server start, model loaded, unloaded, over-context bursts, queue full, VRAM
+- [x] Log-derived events (server start, model loaded, unloaded, over-context bursts, queue full, VRAM
       above 90%)
-- [ ] Request queries: filters, aggregates and percentiles from SQLite
-- [ ] SSE stream to the UI at 1 Hz with pause; REST for history
-- [ ] CLI: `logs [-f]`
+- [x] Request queries: filters, aggregates and percentiles from SQLite
+- [x] SSE stream to the UI at 1 Hz with pause; REST for history
+- [x] CLI: `logs [-f]`
 
 ### M5 · UI foundation
 
-- [ ] Tokens from the design: ground `#0A0B0D`, panel `#0F1114`, borders `#1D2026`/`#23272E`, text
+- [x] Tokens from the design: ground `#0A0B0D`, panel `#0F1114`, borders `#1D2026`/`#23272E`, text
       `#E8EAED`/`#8D95A1`; decode amber `#F0B35A`, prefill `#6CC4F2`, cached `#9D8CF0`, ok `#5EE0B5`,
       warn `#FFB38A`, error `#FF6B6B`/`#FF9F96`
-- [ ] Self-hosted Geist and Geist Mono
-- [ ] API client mirroring the Go routes; live state in `.svelte.ts` modules using runes
-- [ ] Components: band and panel, section heading, stat tile with sparkline, legend, segmented control,
+- [x] Self-hosted Geist and Geist Mono
+- [x] API client mirroring the Go routes; live state in `.svelte.ts` modules using runes
+- [x] Components: band and panel, section heading, stat tile with sparkline, legend, segmented control,
       switch, chip, stepper, status dot, stacked bar, command block with Copy, live toggle, buttons
-- [ ] Motion from the design (pulse, blink, flow, breathe, rise), off under `prefers-reduced-motion`
-- [ ] Layouts wrap at phone width, wide tables scroll in their own box; accessibility as drawn (real
+- [x] Motion from the design (pulse, blink, flow, breathe, rise), off under `prefers-reduced-motion`
+- [x] Layouts wrap at phone width, wide tables scroll in their own box; accessibility as drawn (real
       buttons, `aria-*`, 44 px targets)
-- [ ] Nav: logo, three link groups, update dot on Builds, search button, server status button with uptime
+- [x] Nav: logo, three link groups, update dot on Builds, search button, server status button with uptime
 
 ### M6 · Monitoring pages
 
 **Overview**
 
-- [ ] Header: build, backend, GPUs, models loaded; live toggle
-- [ ] Decode throughput: current, avg, peak, 60 s chart
-- [ ] Tiles with sparklines: Prefill, TTFT p50 and p95, Requests per minute and deferred, KV cache
-- [ ] Slots and context windows: stacked cached, prompt and generated bars with state and speed
-- [ ] VRAM residency: per-GPU cells for weights, KV, compute and free by model; System RAM, tensor split, temps
-- [ ] Request waterfall: queue, prefill and decode over 60 s, live stripes, link to Requests
-- [ ] Router models: quant, meta, slot pips, load and unload; link to Library
-- [ ] Launch profile summary with Edit link; server log tail with link to Logs
+- [x] Header: build, backend, GPUs, models loaded; live toggle
+- [x] Decode throughput: current, avg, peak, 60 s chart
+- [x] Tiles with sparklines: Prefill, TTFT p50 and p95, Requests per minute and deferred, KV cache
+- [x] Slots and context windows: stacked cached, prompt and generated bars with state and speed
+- [x] VRAM residency: per-GPU cells for weights, KV, compute and free by model; System RAM, tensor split, temps
+- [x] Request waterfall: queue, prefill and decode over 60 s, live stripes, link to Requests
+- [x] Router models: quant, meta, slot pips, load and unload; link to Library
+- [x] Launch profile summary with Edit link; server log tail with link to Logs
 
 **Slots**
 
-- [ ] Header summary; Save all, Erase idle, live toggle
-- [ ] Activity heatmap: lane per slot, 90 cells, brightness by decode speed, busy %
-- [ ] Context map cards: grid of cells, state, `n_past` equivalent, speed, selection
-- [ ] Inspector: stats, sampling params, latest prompt (capture on), task id
-- [ ] Actions: Save KV, Restore, Erase, Cancel; disabled with a hint when `--slot-save-path` is missing
+- [x] Header summary; Save all, Erase idle, live toggle
+- [x] Activity heatmap: lane per slot, 90 cells, brightness by decode speed, busy %
+- [x] Context map cards: grid of cells, state, `n_past` equivalent, speed, selection
+- [x] Inspector: stats, sampling params, latest prompt (capture on), task id
+- [x] Actions: Save KV, Restore, Erase, Cancel; disabled with a hint when `--slot-save-path` is missing
 
 **Requests**
 
-- [ ] Filters: endpoint, model, range (1 h, 24 h, 7 d)
-- [ ] KPI strip: requests, success, TTFT, end-to-end, tokens, prompt cache hit
-- [ ] Prompt size vs TTFT scatter, cached vs cold, selected marker
-- [ ] Where the time goes per model (median); status code counts
-- [ ] Recent list with selection; Export CSV
-- [ ] Detail: token stream chart with prefill-collision spikes, timings grid, messages (capture on), Copy as cURL
-- [ ] Replay in Web UI (capture on). **Spike:** serve upstream's UI (`--api-prefix` or a second port) and prefill it
+- [x] Filters: endpoint, model, range (1 h, 24 h, 7 d)
+- [x] KPI strip: requests, success, TTFT, end-to-end, tokens, prompt cache hit
+- [x] Prompt size vs TTFT scatter, cached vs cold, selected marker
+- [x] Where the time goes per model (median); status code counts
+- [x] Recent list with selection; Export CSV
+- [x] Detail: token stream chart with prefill-collision spikes, timings grid, messages (capture on), Copy as cURL
+- [ ] Replay in Web UI (capture on): the button is there, disabled. **Spike:** serve upstream's UI
+      (`--api-prefix` or a second port) and prefill it
 
 **Logs**
 
-- [ ] Volume chart by level over 60 min
-- [ ] Viewer: line numbers, timestamp, level, source, follow, filter text, level and source toggles, empty state
-- [ ] Events timeline; warnings and errors today; Download `.log`; verbosity shown
+- [x] Volume chart by level over 60 min
+- [x] Viewer: line numbers, timestamp, level, source, follow, filter text, level and source toggles, empty state
+- [x] Events timeline; warnings and errors today; Download `.log`; verbosity shown
 
 ### M7 · Library
 
-- [ ] Local scan of `/models`: GGUF header parser (architecture, params, layers, embedding sizes, quant,
+- [x] Local scan of `/models`: GGUF header parser (architecture, params, layers, embedding sizes, quant,
       `expert_count` for MoE), mmproj and shard grouping in the router's layout
-- [ ] Hugging Face search and repo lookup (paste `user/repo`), token support, file sizes per quant
-- [ ] Read remote GGUF metadata with HTTP range requests
-- [ ] Fit estimator: weights + KV at context and cache type + compute + headroom; verdicts Fits on GPU,
+- [x] Hugging Face search and repo lookup (paste `user/repo`), token support, file sizes per quant
+- [x] Read remote GGUF metadata with HTTP range requests
+- [x] Fit estimator: weights + KV at context and cache type + compute + headroom; verdicts Fits on GPU,
       Partial offload, Offload experts, Too large. Calibrate against the router's `memory` measurements
-- [ ] Download queue: resume, speed, ETA, cancel, atomic rename, `/models?reload=1`
-- [ ] UI: source tabs, search, fit controls (context, KV type), filters, result rows with fit bars
-- [ ] Expanded row: description, variants with memory bar and verdict, Download, Load and Unload
-- [ ] Suggestions: largest dense that fits, fast at long context, most capable with offload. Needs an
+- [x] Download queue: resume, speed, ETA, cancel, atomic rename, `/models?reload=1`
+- [x] UI: source tabs, search, fit controls (context, KV type), filters, result rows with fit bars
+- [x] Expanded row: description, variants with memory bar and verdict, Download, Load and Unload
+- [x] Suggestions: largest dense that fits, fast at long context, most capable with offload. Needs an
       embedded starter catalog, since no API provides this
-- [ ] Downloads panel, disk panel, how-to-read-verdicts panel; delete local model
-- [ ] CLI: `models list|pull|rm`
+- [x] Downloads panel, disk panel, how-to-read-verdicts panel; delete local model
+- [x] CLI: `models list|pull|rm`
 
 ### M8 · Profiles and Builds pages
 
 **Profiles**
 
-- [ ] List with status and + New profile
-- [ ] Form: model file, alias, `--jinja`, `--mlock`; context and slots with per-slot result and notes;
+- [x] List with status and + New profile
+- [x] Form: model file, alias, `--jinja`, `--mlock`; context and slots with per-slot result and notes;
       GPU layers, split mode, tensor split, flash attention; KV types and `--cache-reuse` with warnings;
       batching, threads and sampling defaults; router behaviour switches
-- [ ] Hide or flag options the active build does not support; free-form extra args
-- [ ] Memory impact, live: VRAM and RAM bars including other loaded models, verdict
-- [ ] Resulting command with Copy; Import from command line parser
-- [ ] Dirty tracking, Save & reload model, Revert
+- [x] Hide or flag options the active build does not support; free-form extra args
+- [x] Memory impact, live: VRAM and RAM bars including other loaded models, verdict
+- [x] Resulting command with Copy; Import from command line parser
+- [x] Dirty tracking, Save & reload model, Revert
 
 **Builds** (adapted: prebuilts only)
 
-- [ ] Version selector across stable and nightly, including any older supported tag
-- [ ] Hero: running vs target, age, commits ahead; one install action in place of the design's two
-- [ ] Update steps with live progress: download, verify, smoke test, swap and restart; "up to date" state
-- [ ] What you're missing: timeline with stable releases as anchors and nightlies summarised, "affects you"
+- [x] Version selector across stable and nightly, including any older supported tag
+- [x] Hero: running vs target, age, commits ahead; one install action in place of the design's two
+- [x] Update steps with live progress: download, verify, smoke test, swap and restart; "up to date" state
+- [x] What you're missing: timeline with stable releases as anchors and nightlies summarised, "affects you"
       from your backend, architectures and server keywords via compare API; notes panel
-- [ ] Installed builds: active badge, size, Switch, Delete, rollback hint
-- [ ] Backend picker in place of compile options: hardware detected, assets available for the selected
+- [x] Installed builds: active badge, size, Switch, Delete, rollback hint
+- [x] Backend picker in place of compile options: hardware detected, assets available for the selected
       version, unavailable ones disabled with the reason
 
 ### M9 · Bench and the undesigned parts
 
 **Bench**
 
-- [ ] Run setup: model, flash attention, KV type, depth, repetitions; generated `llama-bench` command;
+- [x] Run setup: model, flash attention, KV type, depth, repetitions; generated `llama-bench` command;
       test count and time estimate
-- [ ] Runner: unload models through the router, run, reload; proxy answers `503` with `Retry-After`
+- [x] Runner: unload models through the router, run, reload; proxy answers `503` with `Retry-After`
       meanwhile; progress bar; cancel
-- [ ] Parse `-o json`, tolerating unknown fields; store runs in SQLite with build id
-- [ ] Decode vs depth chart, prompt-processing bars, computed takeaway (only claims the data supports)
-- [ ] Results table with relative bars; Copy as Markdown
-- [ ] Across builds history with deltas; offer a re-run after each update
+- [x] Parse `-o json`, tolerating unknown fields; store runs in SQLite with build id
+- [x] Decode vs depth chart, prompt-processing bars, computed takeaway (only claims the data supports)
+- [x] Results table with relative bars; Copy as Markdown
+- [x] Across builds history with deltas; offer a re-run after each update
 
 **Undesigned screens** (match the design's language)
 
-- [ ] First-run: detected hardware, build installing, no models yet, link to Library
-- [ ] Empty and error states on every page, server-down banner, CPU-only variants of GPU panels
-- [ ] Server controls menu: start, stop, restart, active build
-- [ ] ⌘K palette: pages, models, load and unload, restart
+- [x] First-run: detected hardware, build installing, no models yet, link to Library
+- [x] Empty and error states on every page, server-down banner, CPU-only variants of GPU panels
+- [x] Server controls menu: start, stop, restart, active build
+- [x] ⌘K palette: pages, models, load and unload, restart
 
 ### M10 · Packaging
 
@@ -290,9 +291,9 @@ Order keeps a usable product at each step: M3 is already a working managed llama
 
 ### Quality gates for every milestone
 
-- [ ] `just test`, `just lint` and `gofmt -l .` clean; `just web-e2e` for screen changes
-- [ ] A fake `llama-server` test binary replays recorded `/slots`, `/metrics`, `/models` and logs, so tests need no GPU
-- [ ] Parser fixtures from at least the oldest supported and the newest build
+- [x] `just test`, `just lint` and `just fmt` clean; `just web-e2e` for screen changes
+- [x] A fake `llama-server` test binary replays recorded `/slots`, `/metrics`, `/models` and logs, so tests need no GPU
+- [ ] Parser fixtures from at least the oldest supported and the newest build (only `b12132` so far)
 
 ## Future features
 
