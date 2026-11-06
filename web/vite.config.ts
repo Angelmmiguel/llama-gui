@@ -15,7 +15,7 @@ export default defineConfig({
 	build: { assetsInlineLimit: 0 },
 	server: {
 		// The browser only ever talks to Vite, one origin as in production.
-		proxy: { '/api': { target, ws: true } }
+		proxy: { '/api': { target, ws: true }, '/v1': { target } }
 	},
 	test: {
 		environment: 'node',

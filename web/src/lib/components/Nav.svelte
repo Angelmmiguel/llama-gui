@@ -18,7 +18,8 @@
 			{ route: '/', label: 'Overview', href: resolve('/') },
 			{ route: '/slots', label: 'Slots', href: resolve('/slots') },
 			{ route: '/requests', label: 'Requests', href: resolve('/requests') },
-			{ route: '/logs', label: 'Logs', href: resolve('/logs') }
+			{ route: '/logs', label: 'Logs', href: resolve('/logs') },
+			{ route: '/playground', label: 'Playground', href: resolve('/playground') }
 		],
 		[{ route: '/library', label: 'Library', href: resolve('/library') }],
 		[

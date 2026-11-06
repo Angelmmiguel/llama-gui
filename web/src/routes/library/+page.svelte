@@ -497,7 +497,9 @@
 		{:else if action.kind === 'busy'}
 			<Button variant="ghost" {size} {block} disabled>Loading</Button>
 		{:else}
-			<Button variant="ghost" {size} {block} disabled>Loaded ✓</Button>
+			<Button variant="ghost" {size} {block} href={resolve('/playground')}>
+				Loaded ✓ · open Playground
+			</Button>
 		{/if}
 	{:else if state.kind === 'active'}
 		<Button variant="ghost" {size} {block} onclick={() => cancel(state.job)}>Cancel</Button>

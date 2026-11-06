@@ -51,6 +51,7 @@ test('every view renders live data without errors or phone overflow', async ({ p
 		['/slots', 'Slots', 'qwen3-coder'],
 		['/requests', 'Requests', '/v1/chat/completions'],
 		['/logs', 'Logs', /slot|srv/],
+		['/playground', 'Playground', 'REQUEST SETTINGS'],
 		['/library', 'Library', /On this machine/],
 		['/profiles', 'Profiles', 'gpt-oss-20b'],
 		['/builds', 'Builds', 'b12110'],
@@ -392,4 +393,56 @@ test('Library suggestions show a skeleton only when slow, and a download shows i
 	await expect(suggestions.getByRole('progressbar', { name: /fast-model: 50%/ })).toBeVisible();
 	await expect(suggestions.getByText(/50% · 7 s left/)).toBeVisible();
 	await expect(suggestions.getByRole('button', { name: 'Cancel' })).toBeVisible();
+});
+
+test('the Playground chats with a loaded model and shows the timings', async ({
+	page,
+	request
+}) => {
+	await request.post(`${server.url}/api/v1/models/qwen3-coder/load`);
+	await expect(async () => {
+		const models = (await (await request.get(`${server.url}/api/v1/models`)).json()).models;
+		expect(models.find((m: { id: string }) => m.id === 'qwen3-coder').status).toBe('loaded');
+	}).toPass({ timeout: 30_000 });
+
+	await open(page, '/playground', 'Playground');
+	await page.getByRole('radio', { name: /qwen3-coder/ }).click();
+	await page.getByLabel('Message', { exact: true }).fill('Say hi');
+	await page.getByLabel('Message', { exact: true }).press('Enter');
+
+	const chat = page.getByRole('region', { name: 'Chat' });
+	await expect(chat.getByText('Say hi')).toBeVisible();
+	await expect(chat.getByRole('button', { name: 'Regenerate' })).toBeVisible({ timeout: 30_000 });
+	await expect(chat.getByText(/TTFT .* tokens/)).toBeVisible();
+
+	const inspector = page.getByRole('complementary', { name: 'LAST RESPONSE' });
+	await expect(inspector.getByText('predicted_n')).toBeVisible();
+	await inspector.getByRole('button', { name: 'Request' }).click();
+	await expect(inspector.getByText(/"cache_prompt": true/)).toBeVisible();
+	await expect(inspector.getByRole('button', { name: 'Copy as cURL' })).toBeVisible();
+	await inspector.getByRole('button', { name: 'Raw' }).click();
+	await expect(inspector.getByText(/"choices"/)).toBeVisible();
+
+	await chat.getByRole('button', { name: 'New chat' }).click();
+	await expect(chat.getByText(/Ask qwen3-coder anything/)).toBeVisible();
+});
+
+test('the Playground offers to load a model when none is in memory', async ({ page, request }) => {
+	const snapshot = await (await request.get(`${server.url}/api/v1/telemetry`)).json();
+	for (const m of snapshot.models) {
+		m.status = 'unloaded';
+		m.slots = [];
+		m.memory = { total: 0, devices: [] };
+	}
+	await page.route('**/api/v1/telemetry/stream', (route) =>
+		route.fulfill({
+			contentType: 'text/event-stream',
+			body: `data: ${JSON.stringify(snapshot)}\n\n`
+		})
+	);
+	await page.goto(`${server.url}/ui/playground`);
+	const chat = page.getByRole('region', { name: 'Chat' });
+	await expect(chat.getByRole('heading', { name: 'Load a model to start chatting' })).toBeVisible();
+	await expect(chat.getByRole('button', { name: 'Load' }).first()).toBeVisible();
+	await expect(chat.getByRole('link', { name: /Find a model in the Library/ })).toBeVisible();
 });

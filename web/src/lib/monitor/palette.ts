@@ -14,6 +14,7 @@ export const PAGES = [
 	{ route: '/slots', label: 'Slots', keywords: 'context kv heatmap' },
 	{ route: '/requests', label: 'Requests', keywords: 'latency history ttft' },
 	{ route: '/logs', label: 'Logs', keywords: 'events output' },
+	{ route: '/playground', label: 'Playground', keywords: 'chat test prompt try completion' },
 	{ route: '/library', label: 'Library', keywords: 'models download hugging face gguf' },
 	{ route: '/profiles', label: 'Profiles', keywords: 'launch flags settings' },
 	{ route: '/builds', label: 'Builds', keywords: 'llama.cpp update version install' },

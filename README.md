@@ -19,6 +19,7 @@ never touch a `llama-server` command line again.
 | **Slots** | 90-second activity heatmap, per-slot context maps, slot inspector, save, restore, erase and cancel |
 | **Requests** | Every call with llama.cpp's timings: KPIs, prompt size vs TTFT, where the time goes, token stream, CSV and cURL export |
 | **Logs** | Tail parsed by source and level, filters, volume chart, event timeline, download |
+| **Playground** | Quick chat with a loaded model: request settings, streaming, and each reply's timings, cache use and raw response |
 | **Library** | Local GGUFs and Hugging Face search, checked against your hardware at your context size, with suggestions and a download queue |
 | **Profiles** | Per-model launch settings with live memory impact and the resulting command |
 | **Builds** | Pick the llama.cpp version and backend, see what changed, update, roll back |

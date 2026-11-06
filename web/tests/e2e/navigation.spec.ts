@@ -6,6 +6,7 @@ const PAGES = [
 	{ link: 'Slots', path: '/ui/slots' },
 	{ link: 'Requests', path: '/ui/requests' },
 	{ link: 'Logs', path: '/ui/logs' },
+	{ link: 'Playground', path: '/ui/playground' },
 	{ link: 'Library', path: '/ui/library' },
 	{ link: 'Profiles', path: '/ui/profiles' },
 	{ link: 'Builds', path: '/ui/builds' },
