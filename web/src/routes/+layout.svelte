@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import Nav from '$lib/components/Nav.svelte';
 	import GettingStarted from '$lib/monitor/GettingStarted.svelte';
+	import ServerMenu from '$lib/monitor/ServerMenu.svelte';
 	import StatusBanner from '$lib/monitor/StatusBanner.svelte';
 	import { server } from '$lib/state/server.svelte';
 
@@ -13,7 +14,9 @@
 </script>
 
 <div class="app">
-	<Nav serverState={server.state} uptimeSeconds={server.uptimeSeconds} />
+	<Nav updateAvailable={server.status?.update_available ?? false}>
+		{#snippet serverControl()}<ServerMenu />{/snippet}
+	</Nav>
 	<StatusBanner />
 	<main>
 		<!-- The Overview shows it whole, and Builds is where the install itself is. -->

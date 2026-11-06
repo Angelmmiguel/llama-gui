@@ -1,28 +1,17 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { formatUptime } from '$lib/format';
-	import StatusDot from './StatusDot.svelte';
-	import { tones } from './tones';
+	import type { Snippet } from 'svelte';
 
 	interface Props {
-		/** Router state from `/status`, or `unreachable` and `connecting` from the client. */
-		serverState?: string;
-		/** Seconds; shown under the state when known. */
-		uptimeSeconds?: number | null;
 		/** The update dot on Builds. */
 		updateAvailable?: boolean;
 		onsearch?: () => void;
-		onserver?: () => void;
+		/** The server button with whatever it opens. */
+		serverControl?: Snippet;
 	}
 
-	let {
-		serverState = 'connecting',
-		uptimeSeconds = null,
-		updateAvailable = false,
-		onsearch,
-		onserver
-	}: Props = $props();
+	let { updateAvailable = false, onsearch, serverControl }: Props = $props();
 
 	const groups = [
 		[
@@ -39,17 +28,9 @@
 		]
 	];
 
-	const STATE_COLORS: Record<string, string> = {
-		running: tones.ok,
-		starting: tones.decode,
-		stopping: tones.decode,
-		crashed: tones.error,
-		unreachable: tones.error
-	};
-
 	const current = $derived(page.route.id ?? '');
-	const label = $derived(serverState.charAt(0).toUpperCase() + serverState.slice(1));
-	const stateColor = $derived(STATE_COLORS[serverState] ?? tones.off);
+	// A single-page app knows its platform by the time it renders.
+	const shortcut = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘K' : 'Ctrl K';
 
 	function isActive(route: string): boolean {
 		return route === '/' ? current === '/' : current === route || current.startsWith(`${route}/`);
@@ -112,35 +93,9 @@
 					<path d="m20 20-3.5-3.5"></path>
 				</svg>
 				<span class="search-label">Search</span>
-				<span class="kbd">⌘K</span>
+				<span class="kbd">{shortcut}</span>
 			</button>
-			<button
-				type="button"
-				class="tool server"
-				aria-label="Server {serverState}. Open server controls"
-				onclick={onserver}
-			>
-				<StatusDot color={stateColor} pulse={serverState === 'running'} />
-				<span class="server-text">
-					<span class="state">{label}</span>
-					{#if uptimeSeconds !== null}
-						<span class="uptime">up {formatUptime(uptimeSeconds)}</span>
-					{/if}
-				</span>
-				<svg
-					aria-hidden="true"
-					width="14"
-					height="14"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="var(--fg-muted)"
-					stroke-width="2"
-					stroke-linecap="round"
-					stroke-linejoin="round"
-				>
-					<path d="m7 10 5 5 5-5"></path>
-				</svg>
-			</button>
+			{@render serverControl?.()}
 		</div>
 	</div>
 </header>
@@ -268,28 +223,5 @@
 		border: 1px solid var(--border-ghost);
 		border-radius: var(--radius-3);
 		padding: 1px 5px;
-	}
-
-	.server {
-		padding: 0 var(--space-10) 0 var(--space-12);
-		color: var(--fg-primary);
-	}
-
-	.server-text {
-		display: flex;
-		flex-direction: column;
-		align-items: flex-start;
-		line-height: 1.25;
-	}
-
-	.state {
-		font-size: var(--fs-13);
-		font-weight: 500;
-	}
-
-	.uptime {
-		font-family: var(--font-mono);
-		font-size: var(--fs-11);
-		color: var(--fg-muted);
 	}
 </style>
