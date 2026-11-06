@@ -303,6 +303,7 @@ Order keeps a usable product at each step: M3 is already a working managed llama
 - [x] Draft tokens per request, in Requests, its export and the Playground
 - [x] Compare two profiles on the Bench page, as llama-bench cannot run speculative decoding
 - [x] Blurred placeholder behind "Load a model first" on a fresh Overview
+- [x] Tests and the demo no longer use GitHub's rate limit
 
 ### Found testing on a real GPU (RTX 3060, driver 615)
 

@@ -72,7 +72,7 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, ln net.Listen
 	defer func() { _ = st.Close() }()
 
 	detector := hardware.NewDetector(cfg.Data, cfg.Builds, cfg.Models)
-	rel := releases.NewClient(nil, "", cfg.GitHubToken)
+	rel := releases.NewClient(nil, cfg.GitHubAPI, cfg.GitHubToken)
 	mgr, err := builds.New(builds.Options{
 		Dir: cfg.Builds, Releases: rel, Hardware: detector.Detect, Store: builds.StoreFromKV(st), Logger: log,
 	})

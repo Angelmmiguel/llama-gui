@@ -39,6 +39,8 @@ type Config struct {
 	LogVerbosity int
 	HFToken      string
 	GitHubToken  string
+	// GitHubAPI replaces api.github.com, for tests and the demo.
+	GitHubAPI string
 	// AllowedOrigins are the browser origins that may call inference routes, or
 	// just "*". Lowercase, since that is how browsers send them.
 	AllowedOrigins []string
@@ -101,6 +103,7 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 	verbosity := str("log-verbosity", "LLAMA_GUI_LOG_VERBOSITY", "3")
 	hfToken := str("hf-token", "LLAMA_GUI_HF_TOKEN", getenv("HF_TOKEN"))
 	githubToken := str("github-token", "LLAMA_GUI_GITHUB_TOKEN", "")
+	githubAPI := str("github-api", "LLAMA_GUI_GITHUB_API", "")
 	origins := str("allowed-origins", "LLAMA_GUI_ALLOWED_ORIGINS", "")
 	hosts := str("allowed-hosts", "LLAMA_GUI_ALLOWED_HOSTS", "")
 
@@ -123,6 +126,7 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 		Capture:      *capture,
 		HFToken:      *hfToken,
 		GitHubToken:  *githubToken,
+		GitHubAPI:    *githubAPI,
 	}
 
 	var err error

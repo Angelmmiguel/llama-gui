@@ -70,7 +70,13 @@ export async function startServer(): Promise<TestServer> {
 			cwd: REPO_ROOT,
 			detached: true,
 			stdio: ['ignore', 'pipe', 'pipe'],
-			env: { ...process.env, LLAMA_GUI_LLAMA_VERSION: 'none' }
+			// Nothing listens there: a test run must not use up GitHub's limit, which a real server on the
+			// same connection shares.
+			env: {
+				...process.env,
+				LLAMA_GUI_LLAMA_VERSION: 'none',
+				LLAMA_GUI_GITHUB_API: 'http://127.0.0.1:9'
+			}
 		}
 	);
 	let log = '';

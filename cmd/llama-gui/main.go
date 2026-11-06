@@ -108,6 +108,7 @@ flags of serve, healthcheck and doctor, each with an environment variable that i
   --log-verbosity  LLAMA_GUI_LOG_VERBOSITY  llama-server -lv level (default 3)
   --hf-token       LLAMA_GUI_HF_TOKEN       Hugging Face token (HF_TOKEN also works)
   --github-token   LLAMA_GUI_GITHUB_TOKEN   raises GitHub's rate limit
+  --github-api     LLAMA_GUI_GITHUB_API     another address for GitHub's API, for testing
   --allowed-origins LLAMA_GUI_ALLOWED_ORIGINS
                                             comma-separated origins (or *) whose web pages may
                                             call inference routes, such as https://chat.example.com

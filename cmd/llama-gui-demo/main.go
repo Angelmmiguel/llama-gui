@@ -141,9 +141,13 @@ func run(addr, dir string, traffic bool) error {
 		}
 	}
 
+	github, err := serveFakeGitHub()
+	if err != nil {
+		return err
+	}
 	cmd := exec.CommandContext(ctx, filepath.Join(bin, "llama-gui"), "serve", "--addr", addr, "--data", data,
 		"--builds", buildsDir, "--models", modelsDir, "--llama-version", "none")
-	cmd.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"), "FAKE_LLAMA_GPUS=2", "FAKE_LLAMA_TOKEN_MS=25", "FAKE_LLAMA_TOKENS=160", "FAKE_LLAMA_LOAD_MS=800")
+	cmd.Env = append(os.Environ(), "LLAMA_GUI_GITHUB_API="+github, "PATH="+bin+":"+os.Getenv("PATH"), "FAKE_LLAMA_GPUS=2", "FAKE_LLAMA_TOKEN_MS=25", "FAKE_LLAMA_TOKENS=160", "FAKE_LLAMA_LOAD_MS=800")
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
 	cmd.WaitDelay = 15 * time.Second

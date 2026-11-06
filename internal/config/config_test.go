@@ -50,6 +50,7 @@ var settings = []struct {
 	{"LLAMA_GUI_LOG_VERBOSITY", "log-verbosity", "4", func(c Config) any { return c.LogVerbosity }, 4},
 	{"LLAMA_GUI_HF_TOKEN", "hf-token", "hf", func(c Config) any { return c.HFToken }, "hf"},
 	{"LLAMA_GUI_GITHUB_TOKEN", "github-token", "gh", func(c Config) any { return c.GitHubToken }, "gh"},
+	{"LLAMA_GUI_GITHUB_API", "github-api", "http://x", func(c Config) any { return c.GitHubAPI }, "http://x"},
 	{"LLAMA_GUI_ALLOWED_ORIGINS", "allowed-origins", "https://chat.example.com", func(c Config) any { return c.AllowedOrigins }, []string{"https://chat.example.com"}},
 	{"LLAMA_GUI_ALLOWED_HOSTS", "allowed-hosts", "llm.example.com", func(c Config) any { return c.AllowedHosts }, []string{"llm.example.com"}},
 }
