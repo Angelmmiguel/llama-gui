@@ -294,6 +294,18 @@ Order keeps a usable product at each step: M3 is already a working managed llama
 - [x] `just test`, `just lint` and `just fmt` clean; `just web-e2e` for screen changes
 - [x] A fake `llama-server` test binary replays recorded `/slots`, `/metrics`, `/models` and logs, so tests need no GPU
 - [ ] Parser fixtures from at least the oldest supported and the newest build (only `b12132` so far)
+- [ ] Overview's Load section sits oddly at the bottom of the page: waiting on a design update
+
+### Found testing on a real GPU (RTX 3060, driver 615)
+
+- [x] Read the CUDA version from `nvidia-smi -q -x`, as newer drivers relabelled the summary table
+- [x] Query `kmd_version`, falling back to `driver_version` on older drivers
+- [x] `doctor` warns when a GPU build sees no GPU
+- [x] Keep weights in RAM through `--load-mode` on builds without `--mlock`
+- [x] Cap a new profile's context at what the model supports
+- [x] Page through Library search results
+- [x] Requests keeps its place when a filter changes
+- [x] Range filter on the Overview charts, from a stored history
 
 ## Future features
 
