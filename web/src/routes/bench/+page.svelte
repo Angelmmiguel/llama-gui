@@ -95,6 +95,8 @@
 	const running = $derived(current?.state === 'running');
 	const activeBuild = $derived(server.status?.active_build ?? undefined);
 	const noBuild = $derived(server.status !== null && !activeBuild);
+	// Without the API, "no runs yet" is not something this page knows.
+	const blind = $derived(server.unreachable || Boolean(modelsError));
 	const selectedModel = $derived(models?.find((m) => modelFile(m) === file));
 
 	const options = $derived(
@@ -264,6 +266,7 @@
 	});
 
 	function pickModel(value: string) {
+		if (value === file) return;
 		file = value;
 		picked = null;
 		runs = [];
@@ -437,7 +440,9 @@
 
 		{#if !shown}
 			<Panel>
-				{#if shownId !== null}
+				{#if blind}
+					<EmptyState title="Cannot read the runs" detail="They come back with the connection." />
+				{:else if shownId !== null}
 					<EmptyState title="Loading the run" />
 				{:else}
 					<EmptyState
@@ -577,8 +582,8 @@
 				title="ACROSS BUILDS · tg128 @ d0{selectedModel ? ` · ${modelLabel(selectedModel)}` : ''}"
 				subtitle="Same benchmark after every update, so regressions show up before you notice them in chat"
 			/>
-			{#if historyError}
-				<EmptyState title="Could not load the history" detail={historyError} />
+			{#if blind || historyError}
+				<EmptyState title="Could not load the history" detail={historyError || undefined} />
 			{:else if historyView.length === 0}
 				<EmptyState
 					title="Nothing to compare yet"

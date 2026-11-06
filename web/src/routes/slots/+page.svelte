@@ -71,6 +71,12 @@
 
 	const empty = $derived.by(() => {
 		if (!snap) return { title: 'Connecting to telemetry' };
+		if (server.status && !server.status.active_build) {
+			return {
+				title: 'No llama.cpp build yet',
+				detail: 'Slots exist while models are loaded, which takes a build first.'
+			};
+		}
 		if (!routerUp) {
 			return {
 				title: `The router is ${snap.server.state}`,
