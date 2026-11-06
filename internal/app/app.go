@@ -44,6 +44,8 @@ const (
 	stopTimeout     = 4 * time.Second
 	flushTimeout    = time.Second
 	pruneInterval   = time.Hour
+	// catalogKey is where the Library's starter catalog is kept between runs.
+	catalogKey = "library_catalog"
 )
 
 // Run serves until ctx ends or the listener fails.
@@ -201,6 +203,13 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, ln net.Listen
 	ctrl.applyActive(ctx)
 
 	hub := library.NewClient(nil, "", cfg.HFToken)
+	savedCatalog, err := st.GetKV(ctx, catalogKey)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		log.Warn("reading the saved Library catalog", "error", err)
+	}
+	catalogHub := library.NewCatalogHub(ctx, hub, []byte(savedCatalog), func(ctx context.Context, data []byte) error {
+		return st.SetKV(ctx, catalogKey, string(data))
+	}, log)
 	if err := os.MkdirAll(cfg.Models, 0o750); err != nil {
 		log.Warn("models directory", "error", err)
 	}
@@ -222,7 +231,7 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, ln net.Listen
 		Store:        st,
 		Telemetry:    sampler,
 		Tail:         pipe,
-		Hub:          libraryHub{hub},
+		Hub:          catalogHub,
 		Downloads:    downloads,
 		Bench:        runner,
 		ReloadModels: ctrl.reloadPreset,
@@ -318,23 +327,6 @@ func (r *routerClients) get() (*llama.Client, bool) {
 		r.base, r.client = base, llama.New(base, r.http)
 	}
 	return r.client, true
-}
-
-// libraryHub adds the resolved starter catalog to the hub client.
-type libraryHub struct{ *library.Client }
-
-// Candidates recovers the reason when no entry resolved, as ResolveCatalog only
-// leaves out what failed, and the Library should say Hugging Face is out of reach
-// rather than show an empty list.
-func (h libraryHub) Candidates(ctx context.Context) ([]library.Candidate, error) {
-	entries := library.Catalog()
-	cands := library.ResolveCatalog(ctx, h.Client, entries)
-	if len(cands) == 0 && len(entries) > 0 {
-		if _, err := h.Repo(ctx, entries[0].Repo); err != nil {
-			return nil, err
-		}
-	}
-	return cands, nil
 }
 
 type presetReloader struct{ c *llama.Client }

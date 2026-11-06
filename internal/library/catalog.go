@@ -42,9 +42,15 @@ type Candidate struct {
 	Meta     Metadata  `json:"metadata"`
 }
 
+// catalogSource is where ResolveCatalog gets its answers.
+type catalogSource interface {
+	Repo(ctx context.Context, repo string) (RepoInfo, error)
+	ReadRemoteMetadata(ctx context.Context, repo, file string) (Metadata, error)
+}
+
 // ResolveCatalog looks up every entry's variants and header metadata, a few at a time. Entries the
 // hub cannot answer for are left out; the hub client caches, so repeated calls are cheap.
-func ResolveCatalog(ctx context.Context, c *Client, entries []CatalogEntry) []Candidate {
+func ResolveCatalog(ctx context.Context, c catalogSource, entries []CatalogEntry) []Candidate {
 	out := make([]*Candidate, len(entries))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 4)

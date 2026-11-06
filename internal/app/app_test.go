@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -17,7 +16,6 @@ import (
 	"time"
 
 	"github.com/Angelmmiguel/llama-gui/internal/config"
-	"github.com/Angelmmiguel/llama-gui/internal/library"
 	"github.com/Angelmmiguel/llama-gui/internal/store"
 )
 
@@ -272,17 +270,6 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 			t.Fatalf("timed out waiting for %s", what)
 		}
 		time.Sleep(20 * time.Millisecond)
-	}
-}
-
-func TestLibraryHubReportsWhyTheCatalogIsEmpty(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusTooManyRequests)
-	}))
-	defer srv.Close()
-	_, err := libraryHub{library.NewClient(srv.Client(), srv.URL, "")}.Candidates(context.Background())
-	if !errors.Is(err, library.ErrRateLimited) {
-		t.Errorf("err = %v", err)
 	}
 }
 
