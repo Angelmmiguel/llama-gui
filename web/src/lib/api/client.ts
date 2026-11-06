@@ -928,3 +928,24 @@ export function stream<T>(
 		source?.close();
 	};
 }
+
+export type HistoryRange = '5m' | '15m' | '1h' | '6h' | '24h';
+
+export interface HistoryPoint {
+	decode: number;
+	decode_peak: number;
+	prefill: number;
+	ttft: number;
+	rpm: number;
+	kv: number;
+}
+
+export interface TelemetryHistory {
+	range: HistoryRange;
+	step_seconds: number;
+	until: string;
+	points: HistoryPoint[];
+}
+
+export const getTelemetryHistory = (range: HistoryRange, signal?: AbortSignal) =>
+	request<TelemetryHistory>('GET', '/telemetry/history', { query: { range }, signal });

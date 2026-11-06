@@ -7,6 +7,7 @@ import type {
 	TelemetryModel
 } from '$lib/api/client';
 import {
+	chartData,
 	allSlots,
 	busiestProfile,
 	cellSize,
@@ -367,5 +368,37 @@ describe('charts and text', () => {
 	it('drops the leading source', () => {
 		expect(logMessage('slot', 'slot launch_slot_: id 0')).toBe('launch_slot_: id 0');
 		expect(logMessage('srv', 'load_tensors: x')).toBe('load_tensors: x');
+	});
+});
+
+describe('chartData', () => {
+	const series = {
+		decode: [1, 5, 2],
+		prefill: [],
+		spark: { prefill: [7], ttft: [8], rpm: [9], kv: [0.5] }
+	};
+	const history = [
+		{ decode: 10, decode_peak: 600, prefill: 1, ttft: 2, rpm: 3, kv: 0.1 },
+		{ decode: 20, decode_peak: 30, prefill: 4, ttft: 5, rpm: 6, kv: 0.2 }
+	];
+
+	it('reads the live stream for the last minute, padded to its full width', () => {
+		const got = chartData('1m', series, null);
+		expect(got.decode).toHaveLength(60);
+		expect(got.decode.slice(-3)).toEqual([1, 5, 2]);
+		expect(got.peak).toBe(5);
+		expect(got.spark.kv).toEqual([0.5]);
+	});
+
+	it('reads the history for longer ranges, keeping bursts in the peak', () => {
+		const got = chartData('1h', series, history);
+		expect(got.decode).toEqual([10, 20]);
+		expect(got.peak).toBe(600);
+		expect(got.spark).toEqual({ prefill: [1, 4], ttft: [2, 5], rpm: [3, 6], kv: [0.1, 0.2] });
+	});
+
+	it('falls back to the stream until the history arrives', () => {
+		expect(chartData('1h', series, null).peak).toBe(5);
+		expect(chartData('1m', undefined, null).decode).toHaveLength(60);
 	});
 });

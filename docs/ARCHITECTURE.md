@@ -186,6 +186,7 @@ meaning: 404, 401 when a token may be needed, 429 with `Retry-After` when known,
 | `GET /logs/download` | Same filters as `/logs`, as text, oldest first |
 | `GET /events?since=` | `{events}`, newest first |
 | `GET /telemetry` · `GET /telemetry/stream` | Current snapshot, and SSE at 1 Hz |
+| `GET /telemetry/history?range=` | `{range, step_seconds, until, points}` for `5m`, `15m`, `1h`, `6h` or `24h`: a point per finished period, oldest first, zero where nothing was sampled. Stored every 10 s, kept for the retention period |
 | `GET /bench/runs?model=&limit=` | `{runs}`, newest first |
 | `POST /bench/runs` | Starts a run from a setup, `{model_file, flash_attn, cache_types, depths, repetitions, n_prompt, n_gen, ngl}`: a 202 with the run. Bad input is a 400, a missing model file a 404, and a run already going, no build or a build whose `llama-bench` lacks a flag a 409 |
 | `GET /bench/runs/{id}` | The run with `series` `{decode, prefill}`, `markdown` and, once it has ended and there is something to compare, `takeaway` |

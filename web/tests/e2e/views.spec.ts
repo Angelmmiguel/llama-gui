@@ -218,3 +218,22 @@ test('a Library search loads more results', async ({ page }) => {
 	await expect(page.locator('main').getByText('u/first').first()).toBeVisible();
 	await expect(page.getByRole('button', { name: 'Load more' })).toHaveCount(0);
 });
+
+test('the Overview chart switches range without losing the page', async ({ page }) => {
+	await open(page, '/', 'Overview');
+	const heading = page.getByRole('heading', { name: /DECODE THROUGHPUT/ });
+	const panel = page.getByRole('region', { name: /DECODE THROUGHPUT/ });
+	await expect(heading).toBeVisible();
+	await expect(panel.getByText('last 60 s')).toBeVisible();
+
+	const history = page.waitForResponse('**/api/v1/telemetry/history?range=1h');
+	await page.getByRole('button', { name: '1h', exact: true }).click();
+	expect((await history).ok()).toBe(true);
+	await expect(panel.getByText('last hour')).toBeVisible();
+	await expect(
+		page.getByRole('img', { name: /Decode tokens per second, last hour/ })
+	).toBeVisible();
+
+	await page.getByRole('button', { name: '1m', exact: true }).click();
+	await expect(panel.getByText('last 60 s')).toBeVisible();
+});

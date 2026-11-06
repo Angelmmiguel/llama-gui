@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Angelmmiguel/llama-gui/internal/store"
 	"github.com/Angelmmiguel/llama-gui/internal/telemetry"
 )
 
@@ -76,5 +77,47 @@ func TestTelemetryStreamStops(t *testing.T) {
 				t.Fatal("handler still running")
 			}
 		})
+	}
+}
+
+func TestTelemetryHistory(t *testing.T) {
+	h := newHarness(t)
+	finished := time.Now().UTC().Truncate(telemetry.RollupPeriod).Add(-telemetry.RollupPeriod)
+	for _, s := range []store.TelemetrySample{
+		{At: finished, Decode: 12.5, DecodePeak: 40, Prefill: 3, TTFT: 90, RPM: 6, KV: 0.25},
+		{At: finished.Add(-time.Hour), Decode: 99, DecodePeak: 99},
+	} {
+		if err := h.store.InsertTelemetrySample(context.Background(), s); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	code, body := h.sendJSON(t, http.MethodGet, "/api/v1/telemetry/history?range=5m", "")
+	points := asList(t, body, "points")
+	if code != http.StatusOK || body["range"] != "5m" || body["step_seconds"] != float64(10) || len(points) != 30 {
+		t.Fatalf("%d %v", code, body)
+	}
+	// The newest point may be the one before it, if the period turned over during the test.
+	var found map[string]any
+	for _, p := range points {
+		if p["decode"] == 99.0 {
+			t.Error("a sample outside the range came back")
+		}
+		if p["decode"] == 12.5 {
+			found = p
+		}
+	}
+	if found == nil || found["decode_peak"] != 40.0 || found["ttft"] != 90.0 || found["kv"] != 0.25 {
+		t.Errorf("points = %v", points)
+	}
+
+	for rangeName, want := range map[string]int{"15m": 90, "1h": 120, "6h": 120, "24h": 120} {
+		_, body = h.sendJSON(t, http.MethodGet, "/api/v1/telemetry/history?range="+rangeName, "")
+		if got := len(asList(t, body, "points")); got != want {
+			t.Errorf("%s: %d points, want %d", rangeName, got, want)
+		}
+	}
+	if code, _ = h.sendJSON(t, http.MethodGet, "/api/v1/telemetry/history?range=9y", ""); code != http.StatusBadRequest {
+		t.Errorf("unknown range: %d", code)
 	}
 }

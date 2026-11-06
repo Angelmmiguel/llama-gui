@@ -348,6 +348,27 @@ func TestHubDropsForSlowReaders(t *testing.T) {
 	}
 }
 
+func TestRollUpRecordsFinishedPeriods(t *testing.T) {
+	h := newHarness()
+	var got []Rollup
+	h.s.opts.Record = func(_ context.Context, r Rollup) error {
+		got = append(got, r)
+		return nil
+	}
+	for range 3 {
+		h.tick()
+		h.now = h.now.Add(time.Second)
+	}
+	if len(got) != 0 {
+		t.Fatalf("recorded a period still filling: %+v", got)
+	}
+	h.now = h.now.Add(RollupPeriod)
+	h.tick()
+	if len(got) != 1 || !got[0].At.Equal(h.now.Add(-RollupPeriod).Truncate(RollupPeriod)) {
+		t.Errorf("recorded %+v at %v", got, h.now)
+	}
+}
+
 func TestHardwareEverySecondTickAndVRAMEvent(t *testing.T) {
 	h := newHarness()
 	calls := 0

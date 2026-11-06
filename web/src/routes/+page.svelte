@@ -1,11 +1,13 @@
 <script lang="ts">
 	import {
+		getTelemetryHistory,
 		listModels,
 		listProfiles,
 		listRequests,
 		startServer,
 		type Profile,
 		type RequestRecord,
+		type TelemetryHistory,
 		type RouterModel
 	} from '$lib/api/client';
 	import Band from '$lib/components/Band.svelte';
@@ -17,6 +19,7 @@
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Panel from '$lib/components/Panel.svelte';
 	import SectionHeading from '$lib/components/SectionHeading.svelte';
+	import Segmented from '$lib/components/Segmented.svelte';
 	import StatTile from '$lib/components/StatTile.svelte';
 	import { tones } from '$lib/components/tones';
 	import { formatInt, formatMs, formatTokens } from '$lib/format';
@@ -24,13 +27,15 @@
 	import MemoryPanel from '$lib/monitor/MemoryPanel.svelte';
 	import {
 		allSlots,
+		CHART_RANGES,
+		chartData,
 		backendLabel,
 		busiestProfile,
 		gpuSummary,
 		niceMax,
-		padSeries,
 		tensorSplitLabel,
-		waterfallRows
+		waterfallRows,
+		type ChartRange
 	} from '$lib/monitor/overview';
 	import GettingStarted from '$lib/monitor/GettingStarted.svelte';
 	import { errorText, every } from '$lib/monitor/poll';
@@ -43,12 +48,16 @@
 
 	const REQUESTS_MS = 2000;
 	const CONFIG_MS = 10_000;
+	// History gets a new point this often at the finest.
+	const HISTORY_MS = 10_000;
 	// Wider than the chart: a long request that began before the window still ends inside it.
 	const RECENT_MS = 10 * 60_000;
 
 	let recent = $state.raw<RequestRecord[]>([]);
 	let profiles = $state.raw<Profile[]>([]);
 	let estimates = $state.raw<RouterModel[]>([]);
+	let range = $state<ChartRange>('1m');
+	let history = $state.raw<TelemetryHistory | null>(null);
 	let startError = $state('');
 	let starting = $state(false);
 
@@ -95,12 +104,18 @@
 		].join(' · ');
 	});
 
-	const decode = $derived(snap?.series.decode ?? []);
-	const decodeTop = $derived(niceMax(Math.max(0, ...decode)));
+	// Waits for its range's history before switching, so changing range never blanks the chart.
+	const shown = $derived(history && history.range === range ? history.points : null);
+	const chart = $derived(chartData(shown ? range : '1m', snap?.series, shown));
+	const chartRange = $derived(
+		CHART_RANGES.find((r) => r.value === (shown ? range : '1m')) ?? CHART_RANGES[0]
+	);
+	const decode = $derived(chart.decode);
+	const decodeTop = $derived(niceMax(Math.max(0, chart.peak, ...decode)));
 	const decodeAvg = $derived(
 		decode.length > 0 ? decode.reduce((a, b) => a + b, 0) / decode.length : 0
 	);
-	const decodePeak = $derived(Math.max(0, ...decode));
+	const decodePeak = $derived(chart.peak);
 	const yLabels = $derived(
 		[3, 2, 1, 0].map((i) => {
 			const v = (decodeTop / 3) * i;
@@ -110,6 +125,15 @@
 
 	const slots = $derived(snap ? allSlots(snap.models) : []);
 	const busiest = $derived(busiestProfile(profiles, snap?.models ?? []));
+
+	$effect(() => {
+		const current = range;
+		if (current === '1m' || !telemetry.live) return;
+		return every(HISTORY_MS, async (signal) => {
+			const next = await getTelemetryHistory(current, signal).catch(() => null);
+			if (next && !signal.aborted) history = next;
+		});
+	});
 
 	const nowMs = $derived(snap ? Date.parse(snap.time) : 0);
 	const rows = $derived(snap ? waterfallRows(snap.in_flight, recent, snap.models, nowMs) : []);
@@ -157,7 +181,8 @@
 
 	const tiles = $derived.by(() => {
 		if (!snap) return [];
-		const { requests, kv, series } = snap;
+		const { requests, kv } = snap;
+		const spark = chart.spark;
 		const hasTtft = requests.ttft_p50_ms > 0;
 		const deferred = requests.deferred;
 		const batching = [
@@ -171,7 +196,7 @@
 				label: 'PREFILL',
 				value: routerUp ? formatInt(snap.throughput.prefill) : '—',
 				unit: 'tok/s',
-				data: series.spark.prefill,
+				data: spark.prefill,
 				color: tones.prefill,
 				note: batching || 'batching at defaults'
 			},
@@ -179,7 +204,7 @@
 				label: 'TTFT p50',
 				value: hasTtft ? formatInt(requests.ttft_p50_ms) : '—',
 				unit: 'ms',
-				data: series.spark.ttft,
+				data: spark.ttft,
 				color: tones.secondary,
 				note: hasTtft ? `p95 ${formatMs(requests.ttft_p95_ms)}` : 'no requests in 5 min'
 			},
@@ -187,7 +212,7 @@
 				label: 'REQUESTS',
 				value: routerUp ? formatInt(requests.per_minute) : '—',
 				unit: '/ min',
-				data: series.spark.rpm,
+				data: spark.rpm,
 				color: tones.secondary,
 				note: deferred > 0 ? `${deferred} deferred in queue` : 'queue empty'
 			},
@@ -195,7 +220,7 @@
 				label: 'KV CACHE',
 				value: kv.total > 0 ? ((kv.used / kv.total) * 100).toFixed(1) : '—',
 				unit: '% used',
-				data: series.spark.kv,
+				data: spark.kv,
 				color: tones.cached,
 				note:
 					kv.total > 0
@@ -220,7 +245,10 @@
 </script>
 
 <PageHeader title="Overview" {subtitle}>
-	{#snippet actions()}<LiveToggle bind:live={telemetry.live} />{/snippet}
+	{#snippet actions()}
+		<Segmented label="Chart range" options={CHART_RANGES} bind:value={range} />
+		<LiveToggle bind:live={telemetry.live} />
+	{/snippet}
 </PageHeader>
 
 <GettingStarted />
@@ -253,7 +281,7 @@
 			<SectionHeading
 				id="decode-heading"
 				title="DECODE THROUGHPUT · ALL SLOTS"
-				note="last 60 s"
+				note={chartRange.note}
 				align="baseline"
 			/>
 			<div class="hero">
@@ -268,11 +296,11 @@
 				{/if}
 			</div>
 			<LineChart
-				series={[{ data: padSeries(decode, 60), area: true, endDot: true, color: tones.decode }]}
-				label="Decode tokens per second over the last 60 seconds"
+				series={[{ data: decode, area: true, endDot: true, color: tones.decode }]}
+				label="Decode tokens per second, {chartRange.note}"
 				max={decodeTop}
 				{yLabels}
-				xLabels={['−60s', '−45s', '−30s', '−15s', 'now']}
+				xLabels={chartRange.ticks}
 			/>
 		</Panel>
 		<Band layout="grid" columns={2} nested flex="1 1 380px">

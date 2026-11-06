@@ -94,6 +94,7 @@ type Store interface {
 	LogVolume(ctx context.Context, since time.Time) ([]store.LogVolumeBucket, error)
 	CountLogLevels(ctx context.Context, since time.Time) (map[string]int64, error)
 	ListEvents(ctx context.Context, since time.Time) ([]store.Event, error)
+	TelemetryHistory(ctx context.Context, since, until time.Time, step time.Duration) ([]store.TelemetrySample, error)
 }
 
 // Telemetry is the live sample and its stream.
@@ -232,8 +233,9 @@ func Handler(deps Deps) http.Handler {
 		"GET /logs/download": a.downloadLogs,
 		"GET /events":        a.listEvents,
 
-		"GET /telemetry":        a.telemetry,
-		"GET /telemetry/stream": a.streamTelemetry,
+		"GET /telemetry":         a.telemetry,
+		"GET /telemetry/stream":  a.streamTelemetry,
+		"GET /telemetry/history": a.telemetryHistory,
 
 		"GET /bench/runs":       a.listBenchRuns,
 		"POST /bench/runs":      a.startBenchRun,

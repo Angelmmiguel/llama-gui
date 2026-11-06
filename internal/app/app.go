@@ -138,7 +138,10 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, ln net.Listen
 		Hardware: detector.Sample,
 		Requests: requestsFunc{func() *proxy.Proxy { return px }},
 		OnEvent:  pipe.Event,
-		Logger:   log,
+		Record: func(ctx context.Context, r telemetry.Rollup) error {
+			return st.InsertTelemetrySample(ctx, store.TelemetrySample(r))
+		},
+		Logger: log,
 	})
 	px = proxy.New(proxy.Options{
 		Upstream:       sup.Upstream,

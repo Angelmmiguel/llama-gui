@@ -69,7 +69,9 @@ type Options struct {
 	Hardware func(context.Context) hardware.Sample
 	Requests Requests
 	// OnEvent receives conditions only the sampler can see.
-	OnEvent  func(kind, severity, title string, meta map[string]string)
+	OnEvent func(kind, severity, title string, meta map[string]string)
+	// Record stores each finished Rollup. Nil keeps no history.
+	Record   func(ctx context.Context, r Rollup) error
 	Clock    func() time.Time
 	Interval time.Duration
 	Logger   *slog.Logger
@@ -195,6 +197,9 @@ type Sampler struct {
 	decode, prefill                            *ring[float64]
 	sparkPrefill, sparkTTFT, sparkRPM, sparkKV *ring[float64]
 
+	rollup        Rollup
+	rollupSamples int
+
 	mu       sync.Mutex
 	latest   *Snapshot
 	ports    map[int]string
@@ -305,8 +310,52 @@ func (s *Sampler) Tick(ctx context.Context) {
 	s.ticks++
 
 	snap := s.compute(now, modelsErr, readings)
+	s.rollUp(ctx, now, snap)
 	s.checkVRAM()
 	s.publish(snap)
+}
+
+// RollupPeriod is how often the history gets a new point.
+const RollupPeriod = 10 * time.Second
+
+// Rollup is the numbers of one RollupPeriod, for the history the chart ranges read.
+type Rollup struct {
+	At         time.Time
+	Decode     float64
+	DecodePeak float64
+	Prefill    float64
+	TTFT       float64
+	RPM        float64
+	KV         float64
+}
+
+// rollUp adds a sample to the current period, and records the period once time has moved past it.
+func (s *Sampler) rollUp(ctx context.Context, now time.Time, snap *Snapshot) {
+	if s.opts.Record == nil {
+		return
+	}
+	period := now.Truncate(RollupPeriod)
+	if !period.Equal(s.rollup.At) {
+		if s.rollupSamples > 0 {
+			done := s.rollup
+			done.Decode /= float64(s.rollupSamples)
+			done.Prefill /= float64(s.rollupSamples)
+			if err := s.opts.Record(ctx, done); err != nil {
+				s.log.Warn("recording telemetry history", "error", err)
+			}
+		}
+		s.rollup = Rollup{At: period}
+		s.rollupSamples = 0
+	}
+	s.rollupSamples++
+	s.rollup.Decode += snap.Throughput.Decode
+	s.rollup.DecodePeak = max(s.rollup.DecodePeak, snap.Throughput.Decode)
+	s.rollup.Prefill += snap.Throughput.Prefill
+	s.rollup.TTFT = snap.Requests.TTFTP50Ms
+	s.rollup.RPM = snap.Requests.PerMinute
+	if snap.KV.Total > 0 {
+		s.rollup.KV = float64(snap.KV.Used) / float64(snap.KV.Total)
+	}
 }
 
 func (s *Sampler) compute(now time.Time, modelsErr error, readings []reading) *Snapshot {

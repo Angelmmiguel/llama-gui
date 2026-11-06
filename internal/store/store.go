@@ -729,8 +729,8 @@ func (s *Store) ListEvents(ctx context.Context, since time.Time) ([]Event, error
 	return out, nil
 }
 
-// Prune deletes requests (with their bodies), log lines and events older than
-// before, and returns how many rows of those three tables went. It deletes in
+// Prune deletes requests (with their bodies), log lines, events and telemetry
+// history older than before, and returns how many rows of those tables went. It deletes in
 // small transactions so a big backlog doesn't hold the writer for long.
 func (s *Store) Prune(ctx context.Context, before time.Time) (int64, error) {
 	cutoff := before.UnixMicro()
@@ -739,6 +739,7 @@ func (s *Store) Prune(ctx context.Context, before time.Time) (int64, error) {
 		`DELETE FROM requests WHERE id IN (SELECT id FROM requests WHERE started_at < ? LIMIT ?)`,
 		`DELETE FROM log_lines WHERE id IN (SELECT id FROM log_lines WHERE ts < ? LIMIT ?)`,
 		`DELETE FROM events WHERE id IN (SELECT id FROM events WHERE ts < ? LIMIT ?)`,
+		`DELETE FROM telemetry_samples WHERE ts IN (SELECT ts FROM telemetry_samples WHERE ts < ? LIMIT ?)`,
 	} {
 		for {
 			res, err := s.write.ExecContext(ctx, query, cutoff, pruneBatch)

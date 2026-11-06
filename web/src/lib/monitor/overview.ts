@@ -1,12 +1,14 @@
 import type {
 	Gpu,
+	HistoryPoint,
 	InflightRequest,
 	MemoryDevice,
 	Profile,
 	RequestRecord,
 	RouterModel,
 	Slot,
-	TelemetryModel
+	TelemetryModel,
+	TelemetrySnapshot
 } from '$lib/api/client';
 import { tones } from '$lib/components/tones';
 import { formatBytes, formatDuration, formatTokens } from '$lib/format';
@@ -489,4 +491,63 @@ export function sortedModels(models: readonly TelemetryModel[]): TelemetryModel[
 			b.memory.total - a.memory.total ||
 			a.id.localeCompare(b.id)
 	);
+}
+
+/** The chart ranges. `1m` is the live stream, and the others come from the stored history. */
+export const CHART_RANGES = [
+	{ value: '1m', label: '1m', note: 'last 60 s', ticks: ['−60s', '−45s', '−30s', '−15s', 'now'] },
+	{
+		value: '5m',
+		label: '5m',
+		note: 'last 5 min',
+		ticks: ['−5m', '−4m', '−3m', '−2m', '−1m', 'now']
+	},
+	{ value: '15m', label: '15m', note: 'last 15 min', ticks: ['−15m', '−10m', '−5m', 'now'] },
+	{ value: '1h', label: '1h', note: 'last hour', ticks: ['−60m', '−45m', '−30m', '−15m', 'now'] },
+	{ value: '6h', label: '6h', note: 'last 6 hours', ticks: ['−6h', '−4h', '−2h', 'now'] },
+	{
+		value: '24h',
+		label: '24h',
+		note: 'last 24 hours',
+		ticks: ['−24h', '−18h', '−12h', '−6h', 'now']
+	}
+] as const;
+export type ChartRange = (typeof CHART_RANGES)[number]['value'];
+
+export interface ChartData {
+	decode: number[];
+	/** Averaged points hide bursts, so the peak comes from what was stored per second. */
+	peak: number;
+	spark: { prefill: number[]; ttft: number[]; rpm: number[]; kv: number[] };
+}
+
+/** The same shape from either source, so the page draws one chart. */
+export function chartData(
+	range: ChartRange,
+	series: TelemetrySnapshot['series'] | undefined,
+	history: readonly HistoryPoint[] | null
+): ChartData {
+	if (range === '1m' || !history) {
+		const decode = series?.decode ?? [];
+		return {
+			decode: padSeries(decode, 60),
+			peak: Math.max(0, ...decode),
+			spark: {
+				prefill: series?.spark.prefill ?? [],
+				ttft: series?.spark.ttft ?? [],
+				rpm: series?.spark.rpm ?? [],
+				kv: series?.spark.kv ?? []
+			}
+		};
+	}
+	return {
+		decode: history.map((p) => p.decode),
+		peak: Math.max(0, ...history.map((p) => p.decode_peak)),
+		spark: {
+			prefill: history.map((p) => p.prefill),
+			ttft: history.map((p) => p.ttft),
+			rpm: history.map((p) => p.rpm),
+			kv: history.map((p) => p.kv)
+		}
+	};
 }
