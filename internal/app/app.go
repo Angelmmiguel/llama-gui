@@ -141,12 +141,13 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, ln net.Listen
 		Logger:   log,
 	})
 	px = proxy.New(proxy.Options{
-		Upstream: sup.Upstream,
-		Sink:     teeSink{sink, sampler},
-		Policy:   svc,
-		Touch:    sup.Touch,
-		Capture:  cfg.Capture == config.CaptureBodies,
-		Logger:   log,
+		Upstream:       sup.Upstream,
+		Sink:           teeSink{sink, sampler},
+		Policy:         svc,
+		Touch:          sup.Touch,
+		Capture:        cfg.Capture == config.CaptureBodies,
+		AllowedOrigins: cfg.AllowedOrigins,
+		Logger:         log,
 	})
 
 	failInterruptedRuns(ctx, st, time.Now(), log)

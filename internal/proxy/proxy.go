@@ -41,6 +41,8 @@ type Options struct {
 	Capture        bool                    // keep request and response bodies
 	MaxBodyCapture int                     // per body; 0 means 1 MiB
 	MaxBody        int64                   // largest request body read; 0 means 512 MiB
+	// AllowedOrigins may call inference routes from a browser on another site. "*" means any.
+	AllowedOrigins []string
 	Clock          func() time.Time
 	Logger         *slog.Logger
 }
@@ -101,6 +103,9 @@ func New(opts Options) *Proxy {
 }
 
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if p.refuseCrossSite(w, r) {
+		return
+	}
 	ex := &exchange{measured: isMeasured(r)}
 	ex.meter = meter{started: p.opts.Clock(), now: p.opts.Clock, capture: p.opts.Capture, maxCapture: p.opts.MaxBodyCapture}
 
@@ -220,6 +225,7 @@ func withAutoload(rawQuery string, allow bool) string {
 }
 
 func (p *Proxy) modifyResponse(resp *http.Response) error {
+	stripCORS(resp.Header)
 	ex, _ := resp.Request.Context().Value(ctxKey{}).(*exchange)
 	if ex == nil || !ex.measured {
 		return nil
@@ -289,7 +295,13 @@ var measuredPaths = map[string]bool{
 }
 
 func isMeasured(r *http.Request) bool {
-	return r.Method == http.MethodPost && (measuredPaths[r.URL.Path] || strings.HasPrefix(r.URL.Path, "/v1/audio/"))
+	return r.Method == http.MethodPost && isInference(r.URL.Path)
+}
+
+// isInference excludes dot segments because upstream may resolve them: an allowed
+// origin must not reach /models/load through /v1/audio/../../models/load.
+func isInference(path string) bool {
+	return measuredPaths[path] || (strings.HasPrefix(path, "/v1/audio/") && !strings.Contains(path, ".."))
 }
 
 // isManagement says the path acts on the router, not through a model, so it must not load one.
