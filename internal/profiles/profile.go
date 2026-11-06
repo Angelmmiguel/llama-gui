@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode"
 )
@@ -38,6 +39,11 @@ type Profile struct {
 	UBatch      int    `json:"ubatch,omitempty"`
 	Threads     int    `json:"threads,omitempty"`
 
+	SpecType       string `json:"spec_type,omitempty"` // comma-separated --spec-type values
+	SpecDraftMax   int    `json:"spec_draft_max,omitempty"`
+	SpecDraftModel string `json:"spec_draft_model,omitempty"` // relative to the models dir
+	SpecDraftNGL   string `json:"spec_draft_ngl,omitempty"`   // a number, auto or all
+
 	Temp          *float64 `json:"temp,omitempty"`
 	TopP          *float64 `json:"top_p,omitempty"`
 	TopK          *int     `json:"top_k,omitempty"`
@@ -55,6 +61,7 @@ var (
 	nglRe         = regexp.MustCompile(`^(auto|all|-?[0-9]+)$`)
 	tensorSplitRe = regexp.MustCompile(`^[0-9]+(\.[0-9]+)?(,[0-9]+(\.[0-9]+)?)*$`)
 	cacheTypeRe   = regexp.MustCompile(`^[a-z0-9_]+$`)
+	specTypeRe    = regexp.MustCompile(`^[a-z0-9-]+(,[a-z0-9-]+)*$`)
 	flagKeyRe     = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 )
 
@@ -80,6 +87,9 @@ func (p Profile) Validate() error {
 	}
 	if p.CtxSize <= 0 {
 		return invalid("ctx_size", "required and positive")
+	}
+	if err := p.validateSpeculation(); err != nil {
+		return err
 	}
 	for _, c := range []struct {
 		field string
@@ -157,6 +167,31 @@ func checkValue(field, v string) error {
 	}
 	if strings.TrimSpace(v) != v {
 		return invalid(field, "must not start or end with spaces")
+	}
+	return nil
+}
+
+// typesWithDraftFile are the speculative decoding types that read a second GGUF file. MTP uses
+// heads inside the main model, and the n-gram types need no model at all.
+var typesWithDraftFile = []string{"draft", "draft-simple", "draft-eagle3", "draft-dflash", "draft-dspark"}
+
+func (p Profile) validateSpeculation() error {
+	if p.SpecType != "" && !specTypeRe.MatchString(p.SpecType) {
+		return invalid("spec_type", "must be a comma-separated list of types")
+	}
+	if p.SpecDraftMax < 0 {
+		return invalid("spec_draft_max", "must not be negative")
+	}
+	if p.SpecDraftNGL != "" && !nglRe.MatchString(p.SpecDraftNGL) {
+		return invalid("spec_draft_ngl", "must be a number, auto or all")
+	}
+	if p.SpecDraftModel != "" {
+		return checkModelPath("spec_draft_model", p.SpecDraftModel)
+	}
+	for t := range strings.SplitSeq(p.SpecType, ",") {
+		if slices.Contains(typesWithDraftFile, t) {
+			return invalid("spec_draft_model", "--spec-type %s needs a draft model file", t)
+		}
 	}
 	return nil
 }

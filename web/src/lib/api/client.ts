@@ -201,6 +201,11 @@ export interface Profile {
 	batch?: number;
 	ubatch?: number;
 	threads?: number;
+	/** Comma-separated --spec-type values. */
+	spec_type?: string;
+	spec_draft_max?: number;
+	spec_draft_model?: string;
+	spec_draft_ngl?: string;
 	temp?: number;
 	top_p?: number;
 	top_k?: number;
@@ -257,7 +262,7 @@ export interface LocalModelFile {
 	files: string[];
 	mmproj?: string;
 	shards?: number;
-	metadata?: { context_length?: number };
+	metadata?: { context_length?: number; mtp_layers?: number };
 }
 
 export interface MemoryDevice {

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import type { LocalModelFile } from '$lib/api/client';
 	import Band from '$lib/components/Band.svelte';
 	import Button from '$lib/components/Button.svelte';
@@ -11,6 +12,7 @@
 	import Stepper from '$lib/components/Stepper.svelte';
 	import Switch from '$lib/components/Switch.svelte';
 	import TextField from '$lib/components/TextField.svelte';
+	import TextLink from '$lib/components/TextLink.svelte';
 	import { formatInt } from '$lib/format';
 	import FlagGate from './FlagGate.svelte';
 	import {
@@ -18,6 +20,9 @@
 		formatCtx,
 		kvNote,
 		mmprojOf,
+		mtpWarning,
+		needsDraftModel,
+		specTypeOptions,
 		modelChoices,
 		nglView,
 		perSlot,
@@ -66,6 +71,10 @@
 		(current && !KV_TYPES.includes(current) ? [...KV_TYPES, current] : KV_TYPES).map((value) => ({
 			value
 		}));
+
+	const specWarning = $derived(mtpWarning(form.specType, form.modelFile, local));
+	const draftFile = $derived(needsDraftModel(form.specType));
+	const speculating = $derived(form.specType !== '');
 
 	const numbers: { key: FlagField; label: string; flag: string }[] = [
 		{ key: 'batch', label: 'Batch', flag: '-b' },
@@ -297,6 +306,78 @@
 			</FlagGate>
 		</div>
 		<span class="note" class:warn={kv.warn}>{kv.text}</span>
+	</Panel>
+
+	<Panel gap={16} aria-labelledby="f-spec">
+		<SectionHeading
+			id="f-spec"
+			title="SPECULATIVE DECODING"
+			subtitle="Generates several tokens per step when the model agrees with a quick draft"
+		/>
+		<div class="grid">
+			<FlagGate off={unsupported.has('specType')} build={buildTag}>
+				<SelectField
+					label="Type"
+					flag="--spec-type"
+					mono
+					options={specTypeOptions(form.specType)}
+					bind:value={form.specType}
+				/>
+			</FlagGate>
+			{#if speculating}
+				<FlagGate off={unsupported.has('specDraftMax')} build={buildTag}>
+					<TextField
+						label="Max draft tokens"
+						flag="--spec-draft-n-max"
+						inputmode="numeric"
+						placeholder="default"
+						size={40}
+						class="mono"
+						bind:value={form.specDraftMax}
+					/>
+				</FlagGate>
+			{/if}
+			{#if draftFile}
+				<FlagGate off={unsupported.has('specDraftModel')} build={buildTag}>
+					{#if choices}
+						<SelectField
+							label="Draft model file"
+							flag="--spec-draft-model"
+							mono
+							options={[{ value: '', label: 'Choose a file' }, ...choices]}
+							bind:value={form.specDraftModel}
+						/>
+					{:else}
+						<TextField
+							label="Draft model file"
+							flag="--spec-draft-model"
+							size={40}
+							placeholder="relative to the models directory"
+							class="mono"
+							bind:value={form.specDraftModel}
+						/>
+					{/if}
+				</FlagGate>
+				<FlagGate off={unsupported.has('specDraftNgl')} build={buildTag}>
+					<TextField
+						label="Draft layers on GPU"
+						flag="--spec-draft-ngl"
+						placeholder="auto"
+						size={40}
+						class="mono"
+						bind:value={form.specDraftNgl}
+					/>
+				</FlagGate>
+			{/if}
+		</div>
+		{#if specWarning}<span class="note warn">{specWarning}</span>{/if}
+		{#if speculating}
+			<span class="note">
+				Compare it against a profile without speculation on the
+				<TextLink href={resolve('/bench')}>Bench</TextLink> page: how much it helps depends on the model
+				and what you ask.
+			</span>
+		{/if}
 	</Panel>
 
 	<Panel gap={16} aria-labelledby="f-batch">

@@ -297,6 +297,7 @@ Order keeps a usable product at each step: M3 is already a working managed llama
 - [x] Model dock at the top of the Overview, with its Load model drawer and empty panel
 - [x] Library shows download and load progress where you started it, and a skeleton while suggestions are slow
 - [x] Playground view for quick chats, with the timings of each reply
+- [x] Speculative decoding in profiles: MTP, draft models and n-gram types
 
 ### Found testing on a real GPU (RTX 3060, driver 615)
 

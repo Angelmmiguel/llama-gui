@@ -398,3 +398,57 @@ func TestMLockFollowsTheBuild(t *testing.T) {
 		t.Errorf("a build with neither flag: skipped = %+v", skipped)
 	}
 }
+
+func TestSpeculation(t *testing.T) {
+	p := valid()
+	p.SpecType = "draft-mtp"
+	p.SpecDraftMax = 2
+	got, skipped := RenderPreset([]Profile{p}, "/m", nil)
+	if !strings.Contains(got, "spec-type = draft-mtp\n") || !strings.Contains(got, "spec-draft-n-max = 2\n") || len(skipped) != 0 {
+		t.Errorf("preset:\n%s\nskipped %+v", got, skipped)
+	}
+	if cmd := Command(p, "/m", nil); !strings.Contains(cmd, "--spec-type draft-mtp") || !strings.Contains(cmd, "--spec-draft-n-max 2") {
+		t.Errorf("command: %s", cmd)
+	}
+
+	p.SpecType = "draft-dflash"
+	if err := p.Validate(); !errors.Is(err, ErrInvalid) {
+		t.Errorf("a draft type without its file: %v", err)
+	}
+	p.SpecDraftModel = "d/draft.gguf"
+	p.SpecDraftNGL = "all"
+	if err := p.Validate(); err != nil {
+		t.Error(err)
+	}
+	got, _ = RenderPreset([]Profile{p}, "/m", nil)
+	if !strings.Contains(got, "spec-draft-model = /m/d/draft.gguf\n") || !strings.Contains(got, "spec-draft-ngl = all\n") {
+		t.Errorf("preset:\n%s", got)
+	}
+
+	for name, bad := range map[string]func(*Profile){
+		"traversal": func(p *Profile) { p.SpecDraftModel = "../etc/passwd.gguf" },
+		"absolute":  func(p *Profile) { p.SpecDraftModel = "/etc/passwd.gguf" },
+		"type":      func(p *Profile) { p.SpecType = "draft-mtp\nhost = 0.0.0.0" },
+		"negative":  func(p *Profile) { p.SpecDraftMax = -1 },
+		"ngl":       func(p *Profile) { p.SpecDraftNGL = "lots" },
+	} {
+		q := p
+		bad(&q)
+		if err := q.Validate(); !errors.Is(err, ErrInvalid) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+
+	combined := valid()
+	combined.SpecType = "ngram-mod,draft-mtp"
+	if err := combined.Validate(); err != nil {
+		t.Error(err)
+	}
+
+	old := valid()
+	old.SpecType = "draft-mtp"
+	_, skipped = RenderPreset([]Profile{old}, "/m", func(f string) bool { return f != "spec-type" })
+	if len(skipped) != 1 || skipped[0].Flag != "spec-type" {
+		t.Errorf("a build without it: %+v", skipped)
+	}
+}

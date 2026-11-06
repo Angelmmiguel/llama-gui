@@ -52,6 +52,12 @@ func (p Profile) typedKVs(modelsDir string) []kv {
 	addInt("batch-size", p.Batch)
 	addInt("ubatch-size", p.UBatch)
 	addInt("threads", p.Threads)
+	add("spec-type", p.SpecType)
+	addInt("spec-draft-n-max", p.SpecDraftMax)
+	if p.SpecDraftModel != "" {
+		add("spec-draft-model", filepath.Join(modelsDir, p.SpecDraftModel))
+	}
+	add("spec-draft-ngl", p.SpecDraftNGL)
 	addF("temp", p.Temp)
 	addF("top-p", p.TopP)
 	addIntP("top-k", p.TopK)
@@ -209,6 +215,12 @@ func Command(p Profile, modelsDir string, supported func(flag string) bool) stri
 			flag(&third, f.name, ftoa(*f.val))
 		}
 	}
+	flag(&third, "--spec-type", p.SpecType)
+	num(&third, "--spec-draft-n-max", p.SpecDraftMax)
+	if p.SpecDraftModel != "" {
+		flag(&third, "--spec-draft-model", shellQuote(filepath.Join(modelsDir, p.SpecDraftModel)))
+	}
+	flag(&third, "--spec-draft-ngl", p.SpecDraftNGL)
 	if p.Jinja != nil {
 		if *p.Jinja {
 			third = append(third, "--jinja")

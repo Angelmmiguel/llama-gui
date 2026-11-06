@@ -21,6 +21,9 @@ import {
 	toProfile,
 	defaultCtx,
 	mlockFlag,
+	mtpWarning,
+	needsDraftModel,
+	specTypeOptions,
 	unsupportedFields
 } from './view';
 
@@ -421,5 +424,77 @@ describe('default context', () => {
 	it('gives a new form that context', () => {
 		expect(newForm('small/s.gguf', 8192).ctx).toBe('8192');
 		expect(newForm('small/s.gguf').ctx).toBe('32768');
+	});
+});
+
+describe('speculative decoding', () => {
+	it('round-trips through the profile, dropping the draft file for a type without one', () => {
+		const form = {
+			...newForm('m.gguf', 4096),
+			alias: 'm',
+			specType: 'draft-mtp',
+			specDraftMax: '2',
+			specDraftModel: 'left-over.gguf'
+		};
+		const { profile, errors } = toProfile(form);
+		expect(errors).toEqual([]);
+		expect(profile).toMatchObject({ spec_type: 'draft-mtp', spec_draft_max: 2 });
+		expect(profile.spec_draft_model).toBeUndefined();
+		expect(fromProfile(profile).specDraftMax).toBe('2');
+	});
+
+	it('keeps the draft file for a type that reads one', () => {
+		const form = {
+			...newForm('m.gguf', 4096),
+			alias: 'm',
+			specType: 'draft-dflash',
+			specDraftModel: 'draft.gguf',
+			specDraftNgl: 'all'
+		};
+		expect(toProfile(form).profile).toMatchObject({
+			spec_draft_model: 'draft.gguf',
+			spec_draft_ngl: 'all'
+		});
+	});
+
+	it('knows which types need a file, in a list too', () => {
+		expect(needsDraftModel('draft-mtp')).toBe(false);
+		expect(needsDraftModel('ngram-mod')).toBe(false);
+		expect(needsDraftModel('')).toBe(false);
+		expect(needsDraftModel('draft-dflash')).toBe(true);
+		expect(needsDraftModel('ngram-mod, draft-simple')).toBe(true);
+	});
+
+	it('keeps an unknown type selectable', () => {
+		expect(specTypeOptions('').some((o) => o.value === 'draft-mtp')).toBe(true);
+		expect(specTypeOptions('ngram-mod,draft-mtp').at(-1)?.value).toBe('ngram-mod,draft-mtp');
+	});
+
+	it('warns only when a file is known to lack the heads', () => {
+		const file = (mtp_layers: number): LocalModelFile => ({
+			id: 'a',
+			name: 'a',
+			path: 'a.gguf',
+			files: ['a.gguf'],
+			metadata: { mtp_layers }
+		});
+		expect(mtpWarning('draft-mtp', 'a.gguf', [file(0)])).toContain('no MTP heads');
+		expect(mtpWarning('draft-mtp', 'a.gguf', [file(1)])).toBe('');
+		expect(mtpWarning('draft-mtp', 'other.gguf', [file(0)])).toBe('');
+		expect(mtpWarning('ngram-mod', 'a.gguf', [file(0)])).toBe('');
+		expect(mtpWarning('draft-mtp', 'a.gguf', null)).toBe('');
+	});
+
+	it('imports the flags from a pasted command', () => {
+		const { patch, notes } = parseCommandLine(
+			'llama-server --spec-type draft-dflash -md /x/draft.gguf --spec-draft-n-max 15 -ngld 99'
+		);
+		expect(patch).toMatchObject({
+			specType: 'draft-dflash',
+			specDraftModel: 'draft.gguf',
+			specDraftMax: '15',
+			specDraftNgl: '99'
+		});
+		expect(notes[0]).toContain('draft.gguf');
 	});
 });

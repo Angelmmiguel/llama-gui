@@ -15,6 +15,10 @@ export interface Form {
 	alias: string;
 	modelFile: string;
 	mmproj: string;
+	specType: string;
+	specDraftMax: string;
+	specDraftModel: string;
+	specDraftNgl: string;
 	/** Undefined leaves it to upstream, whose default is on. */
 	jinja: boolean | undefined;
 	mlock: boolean;
@@ -63,6 +67,10 @@ export function fromProfile(p: Profile, fresh = false): Form {
 		alias: p.alias,
 		modelFile: p.model_file,
 		mmproj: p.mmproj ?? '',
+		specType: p.spec_type ?? '',
+		specDraftMax: str(p.spec_draft_max),
+		specDraftModel: p.spec_draft_model ?? '',
+		specDraftNgl: p.spec_draft_ngl ?? '',
 		jinja: p.jinja,
 		mlock: p.mlock ?? false,
 		ctx: str(p.ctx_size),
@@ -125,6 +133,12 @@ export function toProfile(f: Form): { profile: Profile; errors: string[] } {
 			alias: f.alias.trim(),
 			model_file: f.modelFile.trim(),
 			mmproj: f.mmproj.trim() || undefined,
+			spec_type: f.specType.trim() || undefined,
+			spec_draft_max: whole(f.specDraftMax, 'Max draft tokens'),
+			spec_draft_model: needsDraftModel(f.specType)
+				? f.specDraftModel.trim() || undefined
+				: undefined,
+			spec_draft_ngl: needsDraftModel(f.specType) ? f.specDraftNgl.trim() || undefined : undefined,
 			jinja: f.jinja,
 			mlock: f.mlock || undefined,
 			ctx_size: whole(f.ctx, 'Total context') ?? 0,
@@ -251,7 +265,11 @@ export const FLAGS = {
 	topP: '--top-p',
 	topK: '--top-k',
 	minP: '--min-p',
-	repeatPenalty: '--repeat-penalty'
+	repeatPenalty: '--repeat-penalty',
+	specType: '--spec-type',
+	specDraftMax: '--spec-draft-n-max',
+	specDraftModel: '--spec-draft-model',
+	specDraftNgl: '--spec-draft-ngl'
 } as const;
 export type FlagField = keyof typeof FLAGS;
 
@@ -278,6 +296,51 @@ export function mlockFlag(flags: readonly string[] | null | undefined): string {
 	return flags?.includes(LOAD_MODE) && !flags.includes(FLAGS.mlock)
 		? `${LOAD_MODE} mmap+mlock`
 		: FLAGS.mlock;
+}
+
+/** The speculative decoding types offered, from the build's --help. */
+const SPEC_TYPES = [
+	{ value: '', label: 'Off' },
+	{ value: 'draft-mtp', label: 'MTP · heads in the main model' },
+	{ value: 'draft-dflash', label: 'DFlash · draft model' },
+	{ value: 'draft-dspark', label: 'DSpark · draft model' },
+	{ value: 'draft-eagle3', label: 'EAGLE-3 · draft model' },
+	{ value: 'draft-simple', label: 'Simple · draft model' },
+	{ value: 'ngram-mod', label: 'N-gram mod · no extra model' },
+	{ value: 'ngram-simple', label: 'N-gram simple · no extra model' },
+	{ value: 'ngram-map-k', label: 'N-gram map · no extra model' },
+	{ value: 'ngram-map-k4v', label: 'N-gram map k4v · no extra model' },
+	{ value: 'ngram-cache', label: 'N-gram cache · no extra model' }
+];
+
+/** A combination or a newer type from an imported command stays selectable as it is. */
+export function specTypeOptions(current: string): { value: string; label: string }[] {
+	return current && !SPEC_TYPES.some((t) => t.value === current)
+		? [...SPEC_TYPES, { value: current, label: current }]
+		: SPEC_TYPES;
+}
+
+const DRAFT_FILE_TYPES = new Set([
+	'draft',
+	'draft-simple',
+	'draft-eagle3',
+	'draft-dflash',
+	'draft-dspark'
+]);
+
+export const needsDraftModel = (type: string) =>
+	type.split(',').some((t) => DRAFT_FILE_TYPES.has(t.trim()));
+
+/** Says so when the chosen file is known not to have the heads MTP needs. Unknown stays silent. */
+export function mtpWarning(
+	type: string,
+	file: string,
+	local: readonly LocalModelFile[] | null
+): string {
+	if (!type.split(',').includes('draft-mtp') || !local) return '';
+	const m = local.find((l) => file === l.path || file.startsWith(`${l.path}/`));
+	if (!m?.metadata || m.metadata.mtp_layers) return '';
+	return 'This file has no MTP heads. Pick a quant tagged MTP in the Library.';
 }
 
 /** A name that passes the alias rule, from a model's file name. */
@@ -508,6 +571,13 @@ const valued: Record<string, Setter> = {};
 for (const [names, set] of [
 	[['-m', '--model'], (f, v) => (f.modelFile = v)],
 	[['--mmproj', '-mm'], (f, v) => (f.mmproj = v)],
+	[['--spec-type'], (f, v) => (f.specType = v)],
+	[['--spec-draft-n-max', '--draft-max', '--draft-n', '--draft'], (f, v) => (f.specDraftMax = v)],
+	[['--spec-draft-model', '-md', '--model-draft'], (f, v) => (f.specDraftModel = v)],
+	[
+		['--spec-draft-ngl', '-ngld', '--gpu-layers-draft', '--n-gpu-layers-draft'],
+		(f, v) => (f.specDraftNgl = v)
+	],
 	[['-a', '--alias'], (f, v) => (f.alias = v)],
 	[['-c', '--ctx-size'], (f, v) => (f.ctx = v)],
 	[['-np', '--parallel'], (f, v) => (f.parallel = Math.max(Number(v) || 0, 0))],
@@ -590,7 +660,7 @@ export function parseCommandLine(line: string): ImportResult {
 				extra.push(words[++i]);
 		}
 	}
-	for (const key of ['modelFile', 'mmproj'] as const) {
+	for (const key of ['modelFile', 'mmproj', 'specDraftModel'] as const) {
 		const path = patch[key];
 		if (path?.startsWith('/') || path?.startsWith('~')) {
 			patch[key] = path.split('/').pop() ?? '';
