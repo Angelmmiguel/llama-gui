@@ -22,6 +22,7 @@ import (
 	"github.com/Angelmmiguel/llama-gui/internal/llama"
 	"github.com/Angelmmiguel/llama-gui/internal/logs"
 	"github.com/Angelmmiguel/llama-gui/internal/profiles"
+	"github.com/Angelmmiguel/llama-gui/internal/proxy"
 	"github.com/Angelmmiguel/llama-gui/internal/releases"
 	"github.com/Angelmmiguel/llama-gui/internal/store"
 	"github.com/Angelmmiguel/llama-gui/internal/supervisor"
@@ -262,15 +263,13 @@ func Handler(deps Deps) http.Handler {
 
 // sameOriginWrites stops other sites from driving the API through a visitor's
 // browser, which matters because there is no authentication to stop them.
-// Non-browser clients don't send the header and are let through.
+// Non-browser clients don't send the headers it looks at and are let through.
 func sameOriginWrites(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet, http.MethodHead, http.MethodOptions:
 		default:
-			switch r.Header.Get("Sec-Fetch-Site") {
-			case "", "same-origin", "none":
-			default:
+			if proxy.CrossSite(r) {
 				WriteError(w, http.StatusForbidden, "cross-site requests are not allowed")
 				return
 			}

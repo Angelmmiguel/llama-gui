@@ -78,6 +78,40 @@ func TestCrossSiteWritesAreRejected(t *testing.T) {
 	}
 }
 
+// Browsers leave out Sec-Fetch-Site on plain HTTP to a LAN host, but still send Origin.
+func TestCrossSiteWritesWithoutFetchMetadata(t *testing.T) {
+	const host = "tower:8080"
+	for _, tc := range []struct {
+		name, origin string
+		status       int
+	}{
+		{"curl", "", http.StatusAccepted},
+		{"same host", "http://tower:8080", http.StatusAccepted},
+		{"same host, other case", "http://TOWER:8080", http.StatusAccepted},
+		{"other host", "http://evil.example", http.StatusForbidden},
+		{"same name, other port", "http://tower:9090", http.StatusForbidden},
+		{"sandboxed page", "null", http.StatusForbidden},
+		{"malformed", "::", http.StatusForbidden},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t)
+			r := httptest.NewRequest(http.MethodPost, "/api/v1/builds/b1-cpu/activate", nil)
+			r.Host = host
+			if tc.origin != "" {
+				r.Header.Set("Origin", tc.origin)
+			}
+			w := httptest.NewRecorder()
+			h.handler.ServeHTTP(w, r)
+			if w.Code != tc.status {
+				t.Errorf("status %d, want %d", w.Code, tc.status)
+			}
+			if tc.status == http.StatusForbidden && len(h.builds.calls) != 0 {
+				t.Errorf("reached the handler: %v", h.builds.calls)
+			}
+		})
+	}
+}
+
 func TestOversizedBodyIsRejected(t *testing.T) {
 	h := newHarness(t)
 	big := `{"version":"` + strings.Repeat("x", maxJSONBody) + `"}`
