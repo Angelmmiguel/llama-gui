@@ -73,3 +73,11 @@ func TestSuggest(t *testing.T) {
 		t.Errorf("host-only: %+v", host)
 	}
 }
+
+func TestSuggestSkipsUnquantisedFiles(t *testing.T) {
+	cands := []Candidate{cand("m", false, map[string]int64{"Q4_K_M": 5, "BF16": 18, "F16": 19, "F32": 20}, "chat")}
+	got := Suggest(cands, Hardware{VRAMBytes: 48 * gb, RAMBytes: 64 * gb}, 8192, "f16")
+	if len(got) == 0 || got[0].Quant != "Q4_K_M" {
+		t.Errorf("%+v", got)
+	}
+}

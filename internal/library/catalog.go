@@ -103,6 +103,16 @@ type option struct {
 // MoE (or the smallest model, when there is none) that fits with room to grow, and the largest model
 // that fits only with offload. A category with no qualifying model is omitted. Embedding models are
 // never suggested. cacheType applies to both K and V.
+// FullPrecision says a quant is unquantised. Those are several times the size for little gain, so
+// they are never what to recommend, only there for who asks.
+func FullPrecision(quant string) bool {
+	switch quant {
+	case "F16", "BF16", "F32":
+		return true
+	}
+	return false
+}
+
 func Suggest(cands []Candidate, hw Hardware, ctx int, cacheType string) []Suggestion {
 	var fits, offload []option
 	for _, c := range cands {
@@ -110,6 +120,9 @@ func Suggest(cands []Candidate, hw Hardware, ctx int, cacheType string) []Sugges
 			continue
 		}
 		for _, v := range c.Variants {
+			if FullPrecision(v.Quant) {
+				continue
+			}
 			f := Estimate(c.Meta, v.SizeBytes, ctx, cacheType, cacheType, 1, hw)
 			o := option{c, v, f}
 			switch f.Verdict {

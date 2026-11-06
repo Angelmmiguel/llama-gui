@@ -89,12 +89,16 @@ export function countFits(rows: readonly RepoRow[]): Record<FitFilter, number> {
 	};
 }
 
+/** Several times the size for little gain, so they only lead when there is nothing else. */
+const FULL_PRECISION = new Set(['F16', 'BF16', 'F32']);
+
 /** The quant a row leads with: the server's pick if it matches, else the largest that fits or the smallest that doesn't. */
 export function bestForFit(row: RepoRow, filter: FitFilter) {
 	const best = bestVariant(row);
 	if (filter === 'any' || (best && fitMatches(best.fit, filter))) return best;
 	const matching = row.variants?.filter((v) => fitMatches(v.fit, filter)) ?? [];
-	return filter === 'gpu' ? matching.at(-1) : matching[0];
+	if (filter !== 'gpu') return matching[0];
+	return matching.findLast((v) => !FULL_PRECISION.has(v.quant)) ?? matching.at(-1);
 }
 
 const FIT_WORDS: Record<FitFilter, string> = {

@@ -398,6 +398,10 @@ func bestVariant(variants []variantJSON, main string) string {
 		if variantStem(v.Variant) != main {
 			continue
 		}
+		// Unquantised files only lead when there is nothing else.
+		if best != "" && library.FullPrecision(v.Quant) {
+			continue
+		}
 		if best == "" || v.Fit.Verdict == library.VerdictFitsGPU || v.Fit.Verdict == library.VerdictFitsRAM {
 			best = v.ID
 		}

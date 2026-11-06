@@ -295,6 +295,15 @@ describe('matchesFilter', () => {
 		expect(bestForFit(r, 'partial')).toBeUndefined();
 	});
 
+	it('does not lead with an unquantised file', () => {
+		const r = {
+			...row,
+			variants: [variant('fits_gpu', 'Q8_0'), variant('fits_gpu', 'BF16')]
+		};
+		expect(bestForFit(r, 'gpu')?.id).toBe('Q8_0');
+		expect(bestForFit({ ...row, variants: [variant('fits_gpu', 'F16')] }, 'gpu')?.id).toBe('F16');
+	});
+
 	it('says what to try when nothing matches', () => {
 		expect(noFitHint('gpu', 'chat', '32K', false)).toBe(
 			'No chat models fit on your GPUs at 32K context. Try a smaller context, a q8_0 KV cache or the Partial offload filter.'
