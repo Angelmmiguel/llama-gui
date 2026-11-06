@@ -161,26 +161,41 @@ func checkValue(field, v string) error {
 	return nil
 }
 
-// reserved reports flags the router owns or that would bypass validation.
+// reserved reports flags the router owns or that would bypass validation. The router expands
+// short names in a preset, so "md" is --model-draft and each short name has to be listed too.
 func reserved(key string) bool {
 	switch key {
-	case "host", "port", "reuse-port", "alias", "api-key", "model", "mmproj", "log-jsonl", "no-log-jsonl",
-		"log-disable", "load-on-startup", "api-prefix", "lora", "lora-scaled", "model-draft", "model-vocoder":
+	case "host", "port", "reuse-port", "alias", "a", "api-key", "api-prefix", "load-on-startup",
+		"log-jsonl", "no-log-jsonl", "log-disable":
 		return true
+	case "model", "m", "mmproj", "mm", "model-draft", "md", "model-vocoder", "lora", "lora-scaled", "path":
+		return true
+	case "hf", "hfr", "hff", "hft", "hfd", "hfrd", "mu", "mmu", "dr", "lcs", "lcd", "jf":
+		return true
+	// These let a request reach beyond the model: running commands and editing files through
+	// built-in tools, MCP servers, RPC workers and tunnels to outside this machine.
+	case "tools", "agent", "ag", "no-agent", "no-ag", "rpc", "connect", "connect-code":
+		return true
+	case "spec-default":
+		return false
 	}
 	// Anything naming a file, directory or remote source would write or read outside
 	// the models directory as the service user, for example --log-file over the database.
-	for _, suffix := range []string{"-file", "-path", "-dir", "-url"} {
+	// A -default flag picks a model to download.
+	for _, suffix := range []string{"-file", "-path", "-dir", "-url", "-model", "-repo", "-hf", "-default"} {
 		if strings.HasSuffix(key, suffix) {
 			return true
 		}
 	}
-	for _, prefix := range []string{"models-", "no-models-", "hf-", "ssl-", "control-vector"} {
+	for _, prefix := range []string{
+		"models-", "no-models-", "hf-", "ssl-", "control-vector", "lookup-cache-", "fim-",
+		"tools-", "mcp-", "ui-mcp-", "webui-mcp-", "no-ui-mcp-", "no-webui-mcp-",
+	} {
 		if strings.HasPrefix(key, prefix) {
 			return true
 		}
 	}
-	return key == "path" || key == "hf"
+	return false
 }
 
 type kv struct{ key, val string }

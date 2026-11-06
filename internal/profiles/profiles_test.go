@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -309,6 +310,66 @@ func TestReservedRejectsFileAndRemoteFlags(t *testing.T) {
 		if reserved(key) {
 			t.Errorf("reserved(%q) = true", key)
 		}
+	}
+}
+
+func TestReservedRejectsWhatReachesBeyondTheModel(t *testing.T) {
+	for _, key := range []string{
+		"tools", "tools-runtime", "agent", "ag", "no-agent", "no-ag", "mcp-servers-config", "mcp-servers-json",
+		"ui-mcp-proxy", "webui-mcp-proxy", "no-ui-mcp-proxy", "rpc", "connect", "connect-code",
+		"spec-draft-model", "model-draft", "md", "spec-draft-hf", "hf-repo-draft", "hfd", "hfrd", "docker-repo", "dr",
+		"m", "mm", "mu", "mmu", "hfr", "hff", "hft", "a", "lookup-cache-static", "lookup-cache-dynamic", "lcs", "lcd", "jf",
+		"embd-gemma-default", "gpt-oss-20b-default", "fim-qwen-7b-spec", "video-ffmpeg-dir",
+	} {
+		if !reserved(key) {
+			t.Errorf("reserved(%q) = false", key)
+		}
+		p := valid()
+		p.ExtraArgs = []string{"--" + key + " x"}
+		if err := p.Validate(); !errors.Is(err, ErrInvalid) {
+			t.Errorf("--%s passed validation: %v", key, err)
+		}
+	}
+}
+
+func TestSpeculativeDecodingArgsPass(t *testing.T) {
+	p := valid()
+	p.ExtraArgs = []string{"--spec-type draft-mtp --spec-draft-n-max 2 --spec-draft-ngl 99 --spec-default"}
+	if err := p.Validate(); err != nil {
+		t.Error(err)
+	}
+}
+
+// Short names are aliases at the router, so a flag is only reserved if all its names are.
+func TestReservedCoversEveryNameOfAFlag(t *testing.T) {
+	raw, err := os.ReadFile("../llama/testdata/help.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	spacing := regexp.MustCompile(`,\s+`)
+	name := regexp.MustCompile(`(?:^|\s)--?([a-z0-9][a-z0-9.-]*)`)
+	checked := 0
+	for line := range strings.Lines(string(raw)) {
+		if !strings.HasPrefix(line, "-") {
+			continue
+		}
+		head, _, _ := strings.Cut(spacing.ReplaceAllString(strings.TrimRight(line, "\n"), ", "), "  ")
+		var names []string
+		for _, m := range name.FindAllStringSubmatch(strings.ReplaceAll(head, ",", " "), -1) {
+			names = append(names, m[1])
+		}
+		if !slices.ContainsFunc(names, reserved) {
+			continue
+		}
+		checked++
+		for _, n := range names {
+			if !reserved(n) {
+				t.Errorf("--%s is not reserved, but another name of it is: %v", n, names)
+			}
+		}
+	}
+	if checked < 30 {
+		t.Errorf("only %d reserved flags found in the help: is its format still understood?", checked)
 	}
 }
 
