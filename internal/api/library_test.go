@@ -303,6 +303,23 @@ func TestLibraryRepo(t *testing.T) {
 	})
 }
 
+func TestLibrarySearchPages(t *testing.T) {
+	h := newHarness(t)
+	h.hub.results = []library.SearchResult{{Repo: "u/plain"}}
+	h.hub.next = "next-page"
+	_, body := h.sendJSON(t, http.MethodGet, "/api/v1/library/search?q=llama", "")
+	if body["next_cursor"] != "next-page" {
+		t.Errorf("first page: %v", body)
+	}
+	h.sendJSON(t, http.MethodGet, "/api/v1/library/search?q=llama&cursor=abc", "")
+	if last := h.hub.calls[len(h.hub.calls)-1]; last != "search llama  abc" {
+		t.Errorf("calls %v", h.hub.calls)
+	}
+	if code, _ := h.sendJSON(t, http.MethodGet, "/api/v1/library/search?q=llama&cursor="+strings.Repeat("x", maxSearchCursor+1), ""); code != http.StatusBadRequest {
+		t.Errorf("long cursor: %d", code)
+	}
+}
+
 func TestLibrarySearch(t *testing.T) {
 	h := newHarness(t)
 	gpuMachine(h)

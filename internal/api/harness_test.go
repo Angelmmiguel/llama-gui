@@ -190,6 +190,7 @@ type fakeHub struct {
 	meta    library.Metadata
 	metaErr error
 	results []library.SearchResult
+	next    string
 	cands   []library.Candidate
 	err     error
 	calls   []string
@@ -197,9 +198,9 @@ type fakeHub struct {
 
 func newFakeHub() *fakeHub { return &fakeHub{repos: map[string]library.RepoInfo{}} }
 
-func (f *fakeHub) Search(_ context.Context, query, filter string, _ int) ([]library.SearchResult, error) {
-	f.calls = append(f.calls, "search "+query+" "+filter)
-	return f.results, f.err
+func (f *fakeHub) Search(_ context.Context, query, filter, cursor string, _ int) (library.SearchPage, error) {
+	f.calls = append(f.calls, strings.TrimSpace("search "+query+" "+filter+" "+cursor))
+	return library.SearchPage{Results: f.results, Next: f.next}, f.err
 }
 func (f *fakeHub) Repo(_ context.Context, repo string) (library.RepoInfo, error) {
 	f.calls = append(f.calls, "repo "+repo)

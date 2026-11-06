@@ -185,3 +185,36 @@ test('switching request filters keeps the page in place', async ({ page, request
 	await expect(page.locator('main .results')).toHaveAttribute('aria-busy', 'false');
 	expect(await before?.evaluate((el) => el.isConnected)).toBe(true);
 });
+
+test('a Library search loads more results', async ({ page }) => {
+	await page.route('**/api/v1/library/repo*', (route) =>
+		route.fulfill({ status: 404, json: { error: 'not found' } })
+	);
+	await page.route('**/api/v1/library/search*', async (route) => {
+		const url = new URL(route.request().url());
+		if (!url.searchParams.get('q')) return route.continue();
+		const second = url.searchParams.get('cursor') === 'page2';
+		await route.fulfill({
+			json: {
+				source: 'search',
+				results: [
+					{
+						repo: second ? 'u/second' : 'u/first',
+						name: second ? 'second' : 'first',
+						tags: [],
+						downloads: 1
+					}
+				],
+				next_cursor: second ? '' : 'page2',
+				hardware: {}
+			}
+		});
+	});
+	await open(page, '/library', 'Library');
+	await page.getByPlaceholder('Search models or paste user/repo').fill('anything');
+	await expect(page.locator('main').getByText('u/first').first()).toBeVisible();
+	await page.getByRole('button', { name: 'Load more' }).click();
+	await expect(page.locator('main').getByText('u/second').first()).toBeVisible();
+	await expect(page.locator('main').getByText('u/first').first()).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Load more' })).toHaveCount(0);
+});

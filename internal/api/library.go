@@ -27,8 +27,10 @@ const (
 	defaultFitCtx  = 32768
 	searchLimit    = 20
 	maxSearchQuery = 200
-	maxPullFiles   = 128
-	maxModelPath   = 1024
+	// maxSearchCursor is generous: the hub's cursors are long base64 and opaque to us.
+	maxSearchCursor = 4096
+	maxPullFiles    = 128
+	maxModelPath    = 1024
 )
 
 // kvTypes are the cache types llama-server accepts for -ctk and -ctv.
@@ -474,6 +476,7 @@ func (a *api) librarySearch(w http.ResponseWriter, r *http.Request) {
 	q := newQuery(r)
 	text := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(q.str("q")), "https://huggingface.co/"))
 	filter := q.str("filter")
+	cursor := q.str("cursor")
 	p := a.fitParams(r.Context(), q)
 	switch hubTag, known := listFilters[filter]; {
 	case q.err != nil:
@@ -482,6 +485,8 @@ func (a *api) librarySearch(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "filter: %q is not chat, vision, embedding, code or moe", filter)
 	case len(text) > maxSearchQuery || strings.ContainsFunc(text, unicode.IsControl):
 		badRequest(w, "q: too long, or holds control characters")
+	case len(cursor) > maxSearchCursor || strings.ContainsFunc(cursor, unicode.IsControl):
+		badRequest(w, "cursor: too long, or holds control characters")
 	case text == "":
 		a.searchCatalog(w, r, filter, p)
 	case library.ValidRepo(text):
@@ -496,17 +501,17 @@ func (a *api) librarySearch(w http.ResponseWriter, r *http.Request) {
 	default:
 		ctx, cancel := context.WithTimeout(r.Context(), hubTimeout)
 		defer cancel()
-		results, err := a.Hub.Search(ctx, text, hubTag, searchLimit)
+		found, err := a.Hub.Search(ctx, text, hubTag, cursor, searchLimit)
 		if err != nil {
 			a.failLibrary(w, err)
 			return
 		}
 		catalog := library.Catalog()
-		rows := make([]repoJSON, 0, len(results))
-		for _, res := range results {
+		rows := make([]repoJSON, 0, len(found.Results))
+		for _, res := range found.Results {
 			rows = append(rows, newRepoRow(res, catalog))
 		}
-		WriteJSON(w, http.StatusOK, map[string]any{"source": "search", "results": rows, "hardware": p.hw})
+		WriteJSON(w, http.StatusOK, map[string]any{"source": "search", "results": rows, "next_cursor": found.Next, "hardware": p.hw})
 	}
 }
 

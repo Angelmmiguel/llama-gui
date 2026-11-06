@@ -109,7 +109,7 @@ type Tailer interface {
 
 // Hub is Hugging Face, as far as the Library asks it anything.
 type Hub interface {
-	Search(ctx context.Context, query, filter string, limit int) ([]library.SearchResult, error)
+	Search(ctx context.Context, query, filter, cursor string, limit int) (library.SearchPage, error)
 	Repo(ctx context.Context, repo string) (library.RepoInfo, error)
 	ReadRemoteMetadata(ctx context.Context, repo, file string) (library.Metadata, error)
 	// Candidates is the starter catalog resolved against the hub, failing only when

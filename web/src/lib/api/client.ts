@@ -780,10 +780,10 @@ export const getLibraryLocal = (query: FitQuery, signal?: AbortSignal) =>
 export const deleteLocalModel = (path: string) =>
 	request<unknown>('DELETE', '/library/local', { query: { path } });
 export const searchLibrary = (
-	query: FitQuery & { q?: string; filter?: string },
+	query: FitQuery & { q?: string; filter?: string; cursor?: string },
 	signal?: AbortSignal
 ) =>
-	request<{ source: string; results: RepoRow[]; hardware: LibraryHardware }>(
+	request<{ source: string; results: RepoRow[]; next_cursor?: string; hardware: LibraryHardware }>(
 		'GET',
 		'/library/search',
 		{ query, signal }

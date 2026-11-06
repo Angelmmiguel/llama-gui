@@ -220,11 +220,17 @@ func (m hfModel) result() SearchResult {
 		LastModified: m.LastModified, Gated: bool(m.Gated), Tags: m.Tags}
 }
 
+// SearchPage is one page of a search listing. Next is empty on the last page.
+type SearchPage struct {
+	Results []SearchResult
+	Next    string
+}
+
 // Search lists GGUF repositories matching query, most downloaded first. filter optionally adds a hub
-// tag such as "image-text-to-text".
-func (c *Client) Search(ctx context.Context, query, filter string, limit int) ([]SearchResult, error) {
+// tag such as "image-text-to-text", and cursor continues from an earlier page's Next.
+func (c *Client) Search(ctx context.Context, query, filter, cursor string, limit int) (SearchPage, error) {
 	if filter != "" && !filterRe.MatchString(filter) {
-		return nil, fmt.Errorf("invalid filter %q", filter)
+		return SearchPage{}, fmt.Errorf("invalid filter %q", filter)
 	}
 	if limit <= 0 {
 		limit = 20
@@ -237,22 +243,42 @@ func (c *Client) Search(ctx context.Context, query, filter string, limit int) ([
 	if query = strings.TrimSpace(query); query != "" {
 		q.Set("search", query)
 	}
+	if cursor != "" {
+		q.Set("cursor", cursor)
+	}
 	u := c.base + "/api/models?" + q.Encode()
 	if v, ok := c.cached(u); ok {
-		return v.([]SearchResult), nil
+		return v.(SearchPage), nil
 	}
 	var raw []hfModel
-	if _, err := c.getJSON(ctx, u, &raw); err != nil {
-		return nil, err
+	header, err := c.getJSON(ctx, u, &raw)
+	if err != nil {
+		return SearchPage{}, err
 	}
-	out := make([]SearchResult, 0, len(raw))
+	out := SearchPage{Results: make([]SearchResult, 0, len(raw)), Next: nextCursor(header.Get("Link"))}
 	for _, m := range raw {
 		if ValidRepo(m.ID) {
-			out = append(out, m.result())
+			out.Results = append(out.Results, m.result())
 		}
 	}
 	c.store(u, out, searchTTL)
 	return out, nil
+}
+
+var nextLinkRe = regexp.MustCompile(`<([^>]*)>\s*;\s*rel="next"`)
+
+// nextCursor takes only the cursor from a Link header, as the rest of its URL is the hub's to say
+// and every request must keep going to the configured host.
+func nextCursor(link string) string {
+	m := nextLinkRe.FindStringSubmatch(link)
+	if m == nil {
+		return ""
+	}
+	u, err := url.Parse(m[1])
+	if err != nil {
+		return ""
+	}
+	return u.Query().Get("cursor")
 }
 
 // File is one GGUF file in a repository.
@@ -311,8 +337,6 @@ type hfTreeEntry struct {
 		Size int64  `json:"size"`
 	} `json:"lfs"`
 }
-
-var nextLinkRe = regexp.MustCompile(`<([^>]+)>;\s*rel="next"`)
 
 // tree lists the GGUF files of a repo, following the hub's Link-header pagination.
 func (c *Client) tree(ctx context.Context, repo string) ([]File, error) {

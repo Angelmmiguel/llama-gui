@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { resolve } from '$app/paths';
 	import {
 		ApiError,
@@ -105,7 +106,8 @@
 	let localError = $state('');
 	let suggestions = $state<LibrarySuggestion[] | null>(null);
 	let suggestionsError = $state('');
-	let hub = $state<{ source: string; results: RepoRow[] } | null>(null);
+	let hub = $state.raw<{ source: string; results: RepoRow[]; next: string } | null>(null);
+	let hubLoadingMore = $state(false);
 	let hubError = $state('');
 	let hubLoading = $state(false);
 	// Rows of a plain search, as each one's lookup comes back.
@@ -141,6 +143,7 @@
 		if (hub?.source === 'catalog')
 			return `HUGGING FACE · STARTER CATALOG · ${hubRows.length} MODELS`;
 		const n = hubRows.length;
+		if (hub?.next) return `HUGGING FACE · GGUF REPOS · TOP ${n} · MORE AVAILABLE`;
 		return `HUGGING FACE · GGUF REPOS · ${n} RESULT${n === 1 ? '' : 'S'}`;
 	});
 
@@ -241,7 +244,7 @@
 		searchLibrary(params, controller.signal)
 			.then(
 				(res) => {
-					hub = { source: res.source, results: res.results };
+					hub = { source: res.source, results: res.results, next: res.next_cursor ?? '' };
 					hubError = '';
 				},
 				(e: unknown) => {
@@ -256,13 +259,40 @@
 		return () => controller.abort();
 	});
 
+	async function loadMoreHub() {
+		const current = hub;
+		if (!current?.next) return;
+		hubLoadingMore = true;
+		try {
+			const res = await searchLibrary({
+				...fitQuery,
+				q: appliedQuery,
+				filter: apiFilter,
+				cursor: current.next
+			});
+			// A new search may have replaced the list meanwhile.
+			if (hub !== current) return;
+			const known = new Set(current.results.map((r) => r.repo));
+			hub = {
+				source: res.source,
+				results: [...current.results, ...res.results.filter((r) => !known.has(r.repo))],
+				next: res.next_cursor ?? ''
+			};
+		} catch (e) {
+			hubError = errorText(e);
+		} finally {
+			hubLoadingMore = false;
+		}
+	}
+
 	// A plain search knows no files or sizes. Asking for each row a few at a time keeps the list
 	// quick to appear and the hub's rate limit out of reach; the server caches what comes back.
 	$effect(() => {
 		const rows = hub?.source === 'search' ? hub.results : [];
 		const params = fitQuery;
 		const controller = new AbortController();
-		const pending = rows.map((r) => r.repo);
+		// Loading more must not ask again for the rows already answered.
+		const pending = untrack(() => rows.map((r) => r.repo).filter((repo) => !lookups[repo]));
 		const worker = async () => {
 			for (let repo = pending.shift(); repo !== undefined; repo = pending.shift()) {
 				try {
@@ -691,6 +721,17 @@
 						{@render hubRow(r)}
 					{/each}
 				</div>
+				{#if hub?.next}
+					<Button
+						variant="ghost"
+						size="sm"
+						tone="muted"
+						disabled={hubLoadingMore}
+						onclick={loadMoreHub}
+					>
+						{hubLoadingMore ? 'Loading…' : 'Load more'}
+					</Button>
+				{/if}
 			{:else if hubLoading}
 				{@render loading('Asking Hugging Face')}
 			{:else if hubError}

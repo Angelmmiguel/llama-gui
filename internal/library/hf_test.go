@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -83,11 +84,11 @@ func TestSearchAndCache(t *testing.T) {
 	now := time.Now()
 	c.now = func() time.Time { return now }
 	for range 2 {
-		res, err := c.Search(context.Background(), "qwen", "", 5)
+		res, err := c.Search(context.Background(), "qwen", "", "", 5)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(res) != 1 || res[0].Repo != "a/b" || !res[0].Gated || res[0].Downloads != 10 {
+		if len(res.Results) != 1 || res.Results[0].Repo != "a/b" || !res.Results[0].Gated || res.Results[0].Downloads != 10 {
 			t.Fatalf("%+v", res)
 		}
 	}
@@ -95,10 +96,10 @@ func TestSearchAndCache(t *testing.T) {
 		t.Errorf("cache missed: %d hits", hits.Load())
 	}
 	now = now.Add(time.Hour)
-	if _, err := c.Search(context.Background(), "qwen", "", 5); err != nil || hits.Load() != 2 {
+	if _, err := c.Search(context.Background(), "qwen", "", "", 5); err != nil || hits.Load() != 2 {
 		t.Errorf("expiry: %v %d", err, hits.Load())
 	}
-	if _, err := c.Search(context.Background(), "x", "bad filter!", 5); err == nil {
+	if _, err := c.Search(context.Background(), "x", "bad filter!", "", 5); err == nil {
 		t.Error("filter not validated")
 	}
 }
@@ -181,7 +182,7 @@ func TestTokenSent(t *testing.T) {
 		_, _ = w.Write([]byte("[]"))
 	}))
 	defer srv.Close()
-	if _, err := NewClient(srv.Client(), srv.URL, "hf_x").Search(context.Background(), "", "", 1); err != nil || got != "Bearer hf_x" {
+	if _, err := NewClient(srv.Client(), srv.URL, "hf_x").Search(context.Background(), "", "", "", 1); err != nil || got != "Bearer hf_x" {
 		t.Errorf("%q %v", got, err)
 	}
 }
@@ -205,5 +206,44 @@ func TestRealHub(t *testing.T) {
 	t.Logf("%+v", m)
 	if m.Architecture != "llama" || m.Quant != "Q8_0" || m.BlockCount != 30 {
 		t.Errorf("%+v", m)
+	}
+}
+
+func TestSearchFollowsTheCursor(t *testing.T) {
+	var got []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = append(got, r.URL.Query().Get("cursor"))
+		if r.URL.Query().Get("cursor") == "" {
+			// A hostile host in the link must not move the next request.
+			w.Header().Set("Link", `<https://evil.example/api/models?limit=2&cursor=abc%3D>; rel="next"`)
+		}
+		_, _ = w.Write([]byte(`[{"id":"a/b"}]`))
+	}))
+	t.Cleanup(srv.Close)
+	c := NewClient(srv.Client(), srv.URL, "")
+	first, err := c.Search(t.Context(), "q", "", "", 2)
+	if err != nil || first.Next != "abc=" {
+		t.Fatalf("first page: %+v %v", first, err)
+	}
+	second, err := c.Search(t.Context(), "q", "", first.Next, 2)
+	if err != nil || second.Next != "" || len(second.Results) != 1 {
+		t.Fatalf("second page: %+v %v", second, err)
+	}
+	if want := []string{"", "abc="}; !slices.Equal(got, want) {
+		t.Errorf("cursors = %v, want %v", got, want)
+	}
+}
+
+func TestNextCursor(t *testing.T) {
+	for link, want := range map[string]string{
+		"": "",
+		`<https://huggingface.co/api/models?cursor=x>; rel="prev"`:                                         "",
+		`<https://huggingface.co/api/models?limit=2>; rel="next"`:                                          "",
+		`<https://huggingface.co/api/models?cursor=x>; rel="next"`:                                         "x",
+		`<https://huggingface.co/m?cursor=a>; rel="prev", <https://huggingface.co/m?cursor=b>; rel="next"`: "b",
+	} {
+		if got := nextCursor(link); got != want {
+			t.Errorf("%q: got %q, want %q", link, got, want)
+		}
 	}
 }
