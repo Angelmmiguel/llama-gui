@@ -446,3 +446,44 @@ test('the Playground offers to load a model when none is in memory', async ({ pa
 	await expect(chat.getByRole('button', { name: 'Load' }).first()).toBeVisible();
 	await expect(chat.getByRole('link', { name: /Find a model in the Library/ })).toBeVisible();
 });
+
+test('a Library search shows it is working from the first keystroke', async ({ page }) => {
+	let release: () => void = () => {};
+	const held = new Promise<void>((done) => (release = done));
+	await page.route('**/api/v1/library/repo*', (route) =>
+		route.fulfill({ status: 404, json: { error: 'not found' } })
+	);
+	await page.route('**/api/v1/library/search*', async (route) => {
+		if (!new URL(route.request().url()).searchParams.get('q')) {
+			return route.fulfill({
+				json: {
+					source: 'catalog',
+					results: [{ repo: 'u/before', name: 'before-model', tags: [], downloads: 1 }],
+					hardware: {}
+				}
+			});
+		}
+		await held;
+		await route.fulfill({
+			json: {
+				source: 'search',
+				results: [{ repo: 'u/after', name: 'after-model', tags: [], downloads: 1 }],
+				hardware: {}
+			}
+		});
+	});
+	await open(page, '/library', 'Library');
+	const main = page.locator('main');
+	await expect(main.getByText('before-model').first()).toBeVisible();
+
+	await page.getByPlaceholder('Search models or paste user/repo').fill('anything');
+	const skeleton = main.getByLabel('Searching Hugging Face');
+	await expect(skeleton).toBeVisible();
+	await expect(main.getByText('before-model')).toHaveCount(0);
+	await expect(main.getByRole('heading', { name: /SEARCHING FOR “ANYTHING”/ })).toBeVisible();
+
+	release();
+	await expect(main.getByText('after-model').first()).toBeVisible();
+	await expect(skeleton).toHaveCount(0);
+	await expect(main.getByRole('heading', { name: /SEARCHING FOR/ })).toHaveCount(0);
+});

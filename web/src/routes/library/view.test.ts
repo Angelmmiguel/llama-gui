@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { DownloadJob, GgufMetadata, LibraryFit, LocalModel } from '$lib/api/client';
 import {
 	displayTags,
+	hubKey,
 	jobView,
 	loadView,
 	localModelFor,
@@ -301,5 +302,13 @@ describe('download and load panels', () => {
 		expect(localModelFor(['dir/m-Q8_0.gguf'], [m])).toBe(m);
 		expect(localModelFor(['other.gguf'], [m])).toBeUndefined();
 		expect(localModelFor([], [m])).toBeUndefined();
+	});
+});
+
+describe('what a Hugging Face list answers', () => {
+	it('changes with the search and the filter', () => {
+		expect(hubKey('qwen', undefined)).toBe(hubKey('qwen', undefined));
+		expect(hubKey('qwen', undefined)).not.toBe(hubKey('gemma', undefined));
+		expect(hubKey('qwen', 'vision')).not.toBe(hubKey('qwen', undefined));
 	});
 });

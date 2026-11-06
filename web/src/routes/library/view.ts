@@ -430,3 +430,6 @@ export function loadView(m: LocalModel): JobView {
 		steps: []
 	};
 }
+
+/** What a Hugging Face list answers: rows change with these, and only their fit with the rest. */
+export const hubKey = (query: string, filter: string | undefined) => `${query}|${filter ?? ''}`;

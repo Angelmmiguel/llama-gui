@@ -57,6 +57,7 @@
 		fitScale,
 		fitTotal,
 		headroomLabel,
+		hubKey,
 		hubProblem,
 		isActive,
 		isHostOnly,
@@ -125,6 +126,8 @@
 	let mtp = $state<Record<string, Record<string, string>>>({});
 	let hubError = $state('');
 	let hubLoading = $state(false);
+	// The search and filter the list on screen answers, to tell when it is out of date.
+	let hubAnswered = $state<string | null>(null);
 	// Rows of a plain search, as each one's lookup comes back.
 	let lookups = $state<Record<string, RepoRow>>({});
 	let lookupErrors = $state<Record<string, string>>({});
@@ -142,6 +145,9 @@
 	const ctxLabel = $derived(contextLabel(appliedCtx).toUpperCase());
 	const fitQuery = $derived({ ctx: appliedCtx, kv: appliedKv });
 	const apiFilter = $derived(serverFilter(filter));
+	// From the first keystroke, not just once the request goes out after the typing pause. A change
+	// of context also refetches, but that only updates the fit of the rows already on screen.
+	const searching = $derived(hubAnswered !== hubKey(query.trim(), apiFilter));
 
 	const localRows = $derived((local ?? []).filter((m) => matchesLocal(m, query)));
 	const hubRows = $derived(
@@ -155,6 +161,11 @@
 
 	const listTitle = $derived.by(() => {
 		if (tab === 'local') return `ON THIS MACHINE · ${disk?.path ?? 'MODELS'}`;
+		if (tab === 'hub' && searching) {
+			return query.trim()
+				? `HUGGING FACE · SEARCHING FOR “${query.trim().toUpperCase()}”…`
+				: 'HUGGING FACE · LOADING…';
+		}
 		if (hub?.source === 'catalog')
 			return `HUGGING FACE · STARTER CATALOG · ${hubRows.length} MODELS`;
 		const n = hubRows.length;
@@ -268,6 +279,7 @@
 	$effect(() => {
 		if (tab !== 'hub') return;
 		const params = { ...fitQuery, q: appliedQuery, filter: apiFilter };
+		const key = hubKey(appliedQuery, apiFilter);
 		const controller = new AbortController();
 		hubLoading = true;
 		searchLibrary(params, controller.signal)
@@ -275,11 +287,13 @@
 				(res) => {
 					hub = { source: res.source, results: res.results, next: res.next_cursor ?? '' };
 					hubError = '';
+					hubAnswered = key;
 				},
 				(e: unknown) => {
 					if (controller.signal.aborted) return;
 					hub = null;
 					hubError = errorText(e);
+					hubAnswered = key;
 				}
 			)
 			.finally(() => {
@@ -879,7 +893,26 @@
 			{#if hubError}
 				{@render alert(hubProblem(hubError))}
 			{/if}
-			{#if hubRows.length > 0}
+			{#if searching}
+				<div class="rows" aria-busy="true" aria-label="Searching Hugging Face">
+					{#each [0, 0.15, 0.3, 0.45, 0.6] as delay (delay)}
+						<div class="row-skeleton" style:--delay="{delay}s">
+							<span class="stack">
+								<span class="shimmer" style:height="14px" style:width="62%"></span>
+								<span class="shimmer" style:height="10px" style:width="44%"></span>
+							</span>
+							<span class="stack">
+								<span class="shimmer" style:height="11px" style:width="70%"></span>
+								<span class="shimmer" style:height="10px" style:width="46%"></span>
+							</span>
+							<span class="stack">
+								<span class="shimmer" style:height="10px"></span>
+								<span class="shimmer" style:height="10px" style:width="54%"></span>
+							</span>
+						</div>
+					{/each}
+				</div>
+			{:else if hubRows.length > 0}
 				<div class="rows">
 					{#each hubRows as r (r.repo)}
 						{@render hubRow(r)}
@@ -1085,6 +1118,22 @@
 
 	.push {
 		margin-top: auto;
+	}
+
+	.row-skeleton {
+		display: grid;
+		grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(160px, 1fr);
+		align-items: center;
+		gap: var(--space-16);
+		padding: 14px var(--space-4);
+		border-top: 1px solid var(--border-row);
+	}
+
+	.stack {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-8);
+		min-width: 0;
 	}
 
 	@keyframes shimmer {
