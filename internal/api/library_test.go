@@ -54,6 +54,13 @@ func TestLibraryRepoWithADraftModel(t *testing.T) {
 	if repo["best"] != "oss-MXFP4" {
 		t.Errorf("best %v", repo["best"])
 	}
+	variants := repo["variants"].([]any)
+	if first := variants[0].(map[string]any); first["id"] != "oss-MXFP4" || first["companion"] != nil {
+		t.Errorf("the model should come first: %v", first)
+	}
+	if last := variants[1].(map[string]any); last["companion"] != true {
+		t.Errorf("draft model not marked: %v", last)
+	}
 	if !slices.Contains(h.hub.calls, "meta eagle3-oss-Q8_0.gguf") || !slices.Contains(h.hub.calls, "meta oss-MXFP4.gguf") {
 		t.Errorf("calls %v", h.hub.calls)
 	}

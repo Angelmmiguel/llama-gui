@@ -71,16 +71,18 @@ export function fitOptions(
 	].filter((o) => !hostOnly || o.value !== 'partial');
 }
 
+const judgedBy = (row: RepoRow) => row.variants?.filter((v) => !v.companion) ?? [];
+
 /** A row still being looked up stays: it has no verdict to be filtered by yet. */
 export function matchesFit(row: RepoRow, filter: FitFilter): boolean {
 	if (filter === 'any' || !row.variants) return true;
-	return row.variants.some((v) => fitMatches(v.fit, filter));
+	return judgedBy(row).some((v) => fitMatches(v.fit, filter));
 }
 
 /** How many rows each choice would show. A repo with quants in several counts in each. */
 export function countFits(rows: readonly RepoRow[]): Record<FitFilter, number> {
 	const count = (filter: FitFilter) =>
-		rows.filter((r) => r.variants?.some((v) => fitMatches(v.fit, filter))).length;
+		rows.filter((r) => judgedBy(r).some((v) => fitMatches(v.fit, filter))).length;
 	return {
 		gpu: count('gpu'),
 		partial: count('partial'),
@@ -96,7 +98,7 @@ const FULL_PRECISION = new Set(['F16', 'BF16', 'F32']);
 export function bestForFit(row: RepoRow, filter: FitFilter) {
 	const best = bestVariant(row);
 	if (filter === 'any' || (best && fitMatches(best.fit, filter))) return best;
-	const matching = row.variants?.filter((v) => fitMatches(v.fit, filter)) ?? [];
+	const matching = judgedBy(row).filter((v) => fitMatches(v.fit, filter));
 	if (filter !== 'gpu') return matching[0];
 	return matching.findLast((v) => !FULL_PRECISION.has(v.quant)) ?? matching.at(-1);
 }

@@ -295,6 +295,17 @@ describe('matchesFilter', () => {
 		expect(bestForFit(r, 'partial')).toBeUndefined();
 	});
 
+	it('does not judge a row by a companion file', () => {
+		const r = {
+			...row,
+			variants: [variant('too_large', 'model'), { ...variant('fits_gpu', 'mtp'), companion: true }]
+		};
+		expect(matchesFit(r, 'gpu')).toBe(false);
+		expect(matchesFit(r, 'large')).toBe(true);
+		expect(countFits([r])).toEqual({ gpu: 0, partial: 0, large: 1, any: 1 });
+		expect(bestForFit(r, 'gpu')).toBeUndefined();
+	});
+
 	it('does not lead with an unquantised file', () => {
 		const r = {
 			...row,

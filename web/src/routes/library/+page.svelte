@@ -755,7 +755,8 @@
 					<span class="quant">
 						{v.quant}{v.shards > 1 ? ` × ${v.shards}` : ''}
 						{#if mtp[r.repo]?.[v.id] === 'heads'}<Tag>MTP</Tag>{/if}
-						{#if mtp[r.repo]?.[v.id] === 'companion'}<Tag>MTP companion</Tag>{/if}
+						{#if mtp[r.repo]?.[v.id] === 'companion'}<Tag>MTP companion</Tag>
+						{:else if v.companion}<Tag>Companion</Tag>{/if}
 					</span>
 					<span class="dim">{formatBytes(v.size_bytes)}</span>
 					<span class="variant-bar"><FitBar fit={v.fit} {scale} bare /></span>

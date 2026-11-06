@@ -6,7 +6,7 @@ import (
 )
 
 var (
-	quantRe = regexp.MustCompile(`(?i)(?:^|[-_.])((?:UD-)?(?:IQ\d(?:_[A-Z]+)*|Q\d(?:_[0-9A-Z]+)*|MXFP4(?:_MOE)?|BF16|F16|F32))(?:[-_.]|$)`)
+	quantRe = regexp.MustCompile(`(?i)(?:^|[-_.])((?:UD-)?(?:IQ\d(?:_[A-Z]+)*|Q\d(?:_[0-9A-Z]+)*|MXFP4(?:_MOE)?|NVFP4|BF16|F16|F32))(?:[-_.]|$)`)
 	shardRe = regexp.MustCompile(`(?i)-(\d{5})-of-(\d{5})\.gguf$`)
 )
 
@@ -21,6 +21,11 @@ func quantFromName(name string) string {
 // isMMProjName reports whether a file name follows llama.cpp's mmproj naming.
 func isMMProjName(name string) bool {
 	return strings.HasPrefix(strings.ToLower(name), "mmproj")
+}
+
+// isIMatrixName reports whether a file holds importance data for quantising, not a model.
+func isIMatrixName(name string) bool {
+	return strings.Contains(strings.ToLower(name), "imatrix") && quantFromName(name) == ""
 }
 
 // shardInfo returns the shard index and total of a "-00001-of-00004.gguf" file name.

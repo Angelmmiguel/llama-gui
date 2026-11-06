@@ -569,6 +569,8 @@ export interface RepoVariant {
 	size_bytes: number;
 	shards: number;
 	fit: LibraryFit;
+	/** Goes next to the repo's model, such as a draft model or MTP heads, so its fit doesn't judge the row. */
+	companion?: boolean;
 	/** The variant's files plus the mmproj a multimodal model needs. */
 	download_files: string[];
 	download_bytes: number;

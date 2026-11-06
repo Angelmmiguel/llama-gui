@@ -377,13 +377,17 @@ func (c *Client) tree(ctx context.Context, repo string) ([]File, error) {
 	return files, nil
 }
 
-// groupFiles groups files by model stem (shards combined) and separates the mmproj files.
+// groupFiles groups files by model stem (shards combined), separates the mmproj files and
+// leaves out imatrix files, which can't be loaded.
 func groupFiles(files []File) (variants []Variant, mmproj []File) {
 	byID := map[string]*Variant{}
 	for _, f := range files {
 		base := path.Base(f.Name)
 		if isMMProjName(base) {
 			mmproj = append(mmproj, f)
+			continue
+		}
+		if isIMatrixName(base) {
 			continue
 		}
 		id := strings.TrimSuffix(f.Name, ".gguf")

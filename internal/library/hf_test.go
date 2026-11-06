@@ -129,6 +129,13 @@ func TestRepoVariants(t *testing.T) {
 	}
 }
 
+func TestGroupFilesLeavesOutIMatrix(t *testing.T) {
+	variants, _ := groupFiles([]File{{Name: "m-imatrix.gguf"}, {Name: "imatrix_unsloth.gguf"}, {Name: "m-imatrix-Q4_K_M.gguf"}})
+	if len(variants) != 1 || variants[0].Quant != "Q4_K_M" {
+		t.Errorf("%+v", variants)
+	}
+}
+
 func TestErrors(t *testing.T) {
 	var hits atomic.Int32
 	srv := fakeHub(t, nil, &hits)

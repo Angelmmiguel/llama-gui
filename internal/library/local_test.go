@@ -108,7 +108,7 @@ func TestDiskUsage(t *testing.T) {
 
 func TestQuantFromName(t *testing.T) {
 	for name, want := range map[string]string{
-		"Qwen3-32B-Q4_K_M.gguf": "Q4_K_M", "gpt-oss-20b-mxfp4.gguf": "MXFP4", "x-f16.gguf": "F16",
+		"Qwen3-32B-Q4_K_M.gguf": "Q4_K_M", "gpt-oss-20b-mxfp4.gguf": "MXFP4", "n-120B-NVFP4.gguf": "NVFP4", "x-f16.gguf": "F16",
 		"mmproj-SmolVLM-256M-Instruct-Q8_0.gguf": "Q8_0", "m-IQ4_XS.gguf": "IQ4_XS", "m-BF16-00001-of-00002.gguf": "BF16",
 		"m-UD-Q4_K_XL.gguf": "UD-Q4_K_XL", "Llama-3.1-8B.gguf": "", "m.Q5_K_S.gguf": "Q5_K_S", "m-Q4_K_M-00001-of-00003.gguf": "Q4_K_M",
 	} {

@@ -307,6 +307,9 @@ func (a *api) libraryDisk(w http.ResponseWriter, _ *http.Request) {
 type variantJSON struct {
 	library.Variant
 	Fit library.Fit `json:"fit"`
+	// Companion marks a file that goes next to the repo's model, such as a draft model
+	// or MTP heads. Whether it fits says nothing about whether the model does.
+	Companion bool `json:"companion,omitempty"`
 	// DownloadFiles is the variant's files plus the mmproj a multimodal model needs.
 	DownloadFiles []string `json:"download_files"`
 	DownloadBytes int64    `json:"download_bytes"`
@@ -420,6 +423,7 @@ func (a *api) repoRow(ctx context.Context, repo string, p fitParams) (repoJSON, 
 	row.MMProj = info.MMProj
 	row.Variants = make([]variantJSON, 0, len(info.Variants))
 	main := mainStem(info.Variants)
+	var companions []variantJSON
 	metas := map[string]library.Metadata{}
 	inventory := library.ReadInventory(a.ModelsDir)
 	for _, v := range info.Variants {
@@ -436,12 +440,17 @@ func (a *api) repoRow(ctx context.Context, repo string, p fitParams) (repoJSON, 
 				row.MetadataError = metadataMessage(err)
 			}
 		}
-		out := variantJSON{Variant: v, Fit: p.estimate(meta, v.SizeBytes)}
+		out := variantJSON{Variant: v, Fit: p.estimate(meta, v.SizeBytes), Companion: stem != main}
 		out.DownloadFiles, out.DownloadBytes = downloadOf(v, info.MMProj)
 		out.LocalPath = localPathOf(inventory, v)
+		if out.Companion {
+			companions = append(companions, out)
+			continue
+		}
 		row.Variants = append(row.Variants, out)
 	}
 	row.Best = bestVariant(row.Variants, main)
+	row.Variants = append(row.Variants, companions...)
 	return row, nil
 }
 
