@@ -177,6 +177,38 @@ func TestBrokenNvidiaSmiIsAWarning(t *testing.T) {
 	}
 }
 
+func TestGPUQueryFallsBackForOlderDrivers(t *testing.T) {
+	var queries []string
+	run := func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		queries = append(queries, args[0])
+		if strings.Contains(args[0], "kmd_version") {
+			return []byte(`Field "kmd_version" is not a valid field to query.`), errors.New("exit status 2")
+		}
+		return []byte(smiCSV), nil
+	}
+	d := &Detector{Run: run}
+	for range 2 {
+		gpus, warn := d.gpus(t.Context())
+		if warn != "" || len(gpus) != 2 || gpus[0].DriverVersion != "550.54.14" {
+			t.Fatalf("gpus = %+v, warning %q", gpus, warn)
+		}
+	}
+	if want := []string{gpuQuery, legacyGPUQuery, legacyGPUQuery}; !reflect.DeepEqual(queries, want) {
+		t.Errorf("queries = %v, want %v", queries, want)
+	}
+}
+
+func TestGPUQueryPrefersTheCurrentField(t *testing.T) {
+	var queries []string
+	run := func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		queries = append(queries, args[0])
+		return []byte(smiCSV), nil
+	}
+	if _, warn := (&Detector{Run: run}).gpus(t.Context()); warn != "" || !reflect.DeepEqual(queries, []string{gpuQuery}) {
+		t.Errorf("queries = %v, warning %q", queries, warn)
+	}
+}
+
 func TestNoDevicesLine(t *testing.T) {
 	if g := parseGPUs([]byte("No devices were found\n")); len(g) != 0 {
 		t.Errorf("GPUs = %+v", g)

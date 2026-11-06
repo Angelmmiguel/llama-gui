@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -109,6 +110,9 @@ type Detector struct {
 	Root string
 	// DiskPaths are the paths reported in Snapshot.Disks.
 	DiskPaths []string
+
+	// legacyQuery remembers that this driver needs legacyGPUQuery, as sampling runs every second.
+	legacyQuery atomic.Bool
 }
 
 // NewDetector returns a Detector for the real host reporting the given disk paths.
@@ -151,14 +155,30 @@ func RecommendBackend(s Snapshot) string {
 	return BackendCPU
 }
 
-const gpuQuery = "--query-gpu=index,name,uuid,driver_version,memory.total,memory.used,utilization.gpu,temperature.gpu"
+const (
+	gpuQuery = "--query-gpu=index,name,uuid,kmd_version,memory.total,memory.used,utilization.gpu,temperature.gpu"
+	// legacyGPUQuery is for drivers without kmd_version, as one unknown field fails the whole query.
+	// Newer drivers deprecate driver_version in its favour.
+	legacyGPUQuery = "--query-gpu=index,name,uuid,driver_version,memory.total,memory.used,utilization.gpu,temperature.gpu"
+	gpuFormat      = "--format=csv,noheader,nounits"
+)
 
 func (d *Detector) gpus(ctx context.Context) ([]GPU, string) {
 	ctx, cancel := context.WithTimeout(ctx, commandTimeout)
 	defer cancel()
-	out, err := d.Run(ctx, "nvidia-smi", gpuQuery, "--format=csv,noheader,nounits")
+	query := gpuQuery
+	if d.legacyQuery.Load() {
+		query = legacyGPUQuery
+	}
+	out, err := d.Run(ctx, "nvidia-smi", query, gpuFormat)
 	if errors.Is(err, exec.ErrNotFound) {
 		return nil, ""
+	}
+	if err != nil && query == gpuQuery {
+		if legacy, legacyErr := d.Run(ctx, "nvidia-smi", legacyGPUQuery, gpuFormat); legacyErr == nil {
+			d.legacyQuery.Store(true)
+			out, err = legacy, nil
+		}
 	}
 	if err != nil {
 		return nil, fmt.Sprintf("nvidia-smi: %v", err)
