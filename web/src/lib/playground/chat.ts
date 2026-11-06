@@ -59,6 +59,9 @@ export interface Timings {
 	predicted_n?: number;
 	predicted_ms?: number;
 	predicted_per_second?: number;
+	/** Speculative decoding's tokens, absent without it. */
+	draft_n?: number;
+	draft_n_accepted?: number;
 }
 
 export interface ChatMessage {
@@ -212,6 +215,14 @@ export function speedOf(m: ChatMessage): number {
 
 export const tokensOf = (m: ChatMessage) => m.timings?.predicted_n ?? m.chunks?.length ?? 0;
 
+/** The share of drafted tokens the model kept, when it drafted any. */
+export function draftsKept(m: ChatMessage | undefined): string | undefined {
+	const t = m?.timings;
+	if (!t?.draft_n) return undefined;
+	const kept = t.draft_n_accepted ?? 0;
+	return `${Math.round((kept / t.draft_n) * 100)}% · ${formatInt(kept)} / ${formatInt(t.draft_n)}`;
+}
+
 export function statsLine(m: ChatMessage): string {
 	const parts: string[] = [];
 	if (m.ttftMs !== undefined) parts.push(`TTFT ${formatMs(m.ttftMs)}`);
@@ -219,6 +230,8 @@ export function statsLine(m: ChatMessage): string {
 	const speed = speedOf(m);
 	if (speed > 0) parts.push(`${speed.toFixed(1)} tok/s`);
 	if (m.timings?.predicted_ms) parts.push(formatMs(m.timings.predicted_ms));
+	const kept = draftsKept(m);
+	if (kept) parts.push(`${kept.split(' ')[0]} of drafts kept`);
 	if (m.stopped) parts.push('stopped');
 	return parts.join(' · ');
 }
@@ -233,6 +246,7 @@ export function timingsGrid(m: ChatMessage | undefined): { k: string; v: string 
 		{ k: 'cache_n', v: num(t?.cache_n) },
 		{ k: 'predicted_n', v: num(t?.predicted_n) },
 		{ k: 'predicted_ms', v: t?.predicted_ms === undefined ? '—' : formatInt(t.predicted_ms) },
+		...(draftsKept(m) ? [{ k: 'drafts kept', v: draftsKept(m) ?? '' }] : []),
 		{ k: 'slot', v: num(m?.slot) },
 		{ k: 'finish', v: m?.finish ?? (m && !m.done ? '…' : '—') }
 	];

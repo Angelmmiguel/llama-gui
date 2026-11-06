@@ -213,3 +213,11 @@ func TestReload(t *testing.T) {
 		t.Errorf("%v %v", ms, err)
 	}
 }
+
+func TestTimingsWithSpeculation(t *testing.T) {
+	line := []byte(`data: {"choices":[{"finish_reason":"stop","delta":{}}],"timings":{"predicted_n":6876,"predicted_per_second":95.29,"draft_n":5408,"draft_n_accepted":4171}}`)
+	tm, ok := ScanSSELine(line)
+	if !ok || tm.DraftN != 5408 || tm.DraftAccepted != 4171 || tm.PredictedN != 6876 {
+		t.Errorf("%+v %v", tm, ok)
+	}
+}

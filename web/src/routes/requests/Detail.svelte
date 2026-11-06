@@ -121,6 +121,14 @@
 					{ label: 'predicted_n', value: formatInt(detail.predicted_n) },
 					{ label: 'predicted_ms', value: formatMs(detail.predicted_ms) },
 					{ label: 'tok/s', value: formatRate(detail.predicted_per_second) },
+					...(detail.draft_n
+						? [
+								{
+									label: 'drafts kept',
+									value: `${Math.round(((detail.draft_n_accepted ?? 0) / detail.draft_n) * 100)}% · ${formatInt(detail.draft_n_accepted ?? 0)} / ${formatInt(detail.draft_n)}`
+								}
+							]
+						: []),
 					{ label: 'queue', value: formatMs(detail.queue_ms) },
 					{ label: 'ttft', value: formatMs(detail.ttft_ms) },
 					{ label: 'total', value: formatMs(detail.total_ms) }

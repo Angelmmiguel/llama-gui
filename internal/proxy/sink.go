@@ -158,7 +158,8 @@ func toStore(r RequestRecord) store.Request {
 		Slot: r.Slot, TaskID: r.Task, TTFTMs: r.TTFTMs, TotalMs: r.TotalMs,
 		PromptN: r.Timings.PromptN, CacheN: r.Timings.CacheN, PromptMs: r.Timings.PromptMS,
 		PredictedN: r.Timings.PredictedN, PredictedMs: r.Timings.PredictedMS,
-		PredictedPerSecond: r.Timings.PredictedPerSecond, Stream: r.Stream,
+		PredictedPerSecond: r.Timings.PredictedPerSecond, DraftN: r.Timings.DraftN, DraftAccepted: r.Timings.DraftAccepted,
+		Stream: r.Stream,
 	}
 	// A bare 2xx says nothing the status doesn't.
 	if r.StatusClass != strconv.Itoa(r.Status) || r.Status >= 400 {

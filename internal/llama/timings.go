@@ -14,6 +14,9 @@ type Timings struct {
 	PredictedN         int     `json:"predicted_n"`
 	PredictedMS        float64 `json:"predicted_ms"`
 	PredictedPerSecond float64 `json:"predicted_per_second"`
+	// DraftN and DraftAccepted are speculative decoding's tokens, absent without it.
+	DraftN        int `json:"draft_n"`
+	DraftAccepted int `json:"draft_n_accepted"`
 }
 
 // ParseTimings extracts "timings" from a JSON object.

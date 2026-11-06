@@ -379,6 +379,9 @@ export interface RequestRecord {
 	predicted_n: number;
 	predicted_ms: number;
 	predicted_per_second: number;
+	/** Speculative decoding's tokens, 0 without it. */
+	draft_n?: number;
+	draft_n_accepted?: number;
 	stream: boolean;
 	/** A classification such as `400 ctx`; empty on a plain success. */
 	error: string;

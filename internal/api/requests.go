@@ -43,6 +43,8 @@ type requestJSON struct {
 	PredictedN         int     `json:"predicted_n"`
 	PredictedMs        float64 `json:"predicted_ms"`
 	PredictedPerSecond float64 `json:"predicted_per_second"`
+	DraftN             int     `json:"draft_n"`
+	DraftAccepted      int     `json:"draft_n_accepted"`
 	Stream             bool    `json:"stream"`
 	Error              string  `json:"error"`
 }
@@ -60,7 +62,7 @@ func toRequestJSON(r store.Request) requestJSON {
 		ID: r.ID, StartedAt: r.StartedAt, Model: r.Model, Endpoint: r.Endpoint, Method: r.Method, Status: r.Status,
 		Slot: r.Slot, TaskID: r.TaskID, TTFTMs: r.TTFTMs, TotalMs: r.TotalMs, QueueMs: queueMs(r),
 		PromptN: r.PromptN, CacheN: r.CacheN, PromptMs: r.PromptMs, PredictedN: r.PredictedN, PredictedMs: r.PredictedMs,
-		PredictedPerSecond: r.PredictedPerSecond, Stream: r.Stream, Error: r.Error,
+		PredictedPerSecond: r.PredictedPerSecond, DraftN: r.DraftN, DraftAccepted: r.DraftAccepted, Stream: r.Stream, Error: r.Error,
 	}
 }
 
@@ -116,6 +118,7 @@ func (a *api) listRequests(w http.ResponseWriter, r *http.Request) {
 var csvHeader = []string{
 	"id", "started_at", "model", "endpoint", "method", "status", "error", "stream", "slot", "task_id", "ttft_ms", "total_ms",
 	"queue_ms", "prompt_n", "cache_n", "prompt_ms", "predicted_n", "predicted_ms", "predicted_per_second",
+	"draft_n", "draft_n_accepted",
 }
 
 func (a *api) requestsCSV(w http.ResponseWriter, r *http.Request, f store.RequestFilter) {
@@ -165,6 +168,7 @@ func csvRecord(r store.Request) []string {
 		strconv.Itoa(r.Status), csvCell(r.Error), strconv.FormatBool(r.Stream), optional(slot), optional(r.TaskID),
 		floats(r.TTFTMs), floats(r.TotalMs), floats(queueMs(r)), strconv.Itoa(r.PromptN), strconv.Itoa(r.CacheN), floats(r.PromptMs),
 		strconv.Itoa(r.PredictedN), floats(r.PredictedMs), floats(r.PredictedPerSecond),
+		strconv.Itoa(r.DraftN), strconv.Itoa(r.DraftAccepted),
 	}
 }
 

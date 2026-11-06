@@ -271,6 +271,8 @@ type Request struct {
 	PredictedN         int
 	PredictedMs        float64
 	PredictedPerSecond float64
+	DraftN             int
+	DraftAccepted      int
 	Stream             bool
 	Error              string
 	// Gaps is a JSON array of inter-token gaps, or nil.
@@ -284,11 +286,11 @@ func (r Request) StatusClass() int { return r.Status / 100 }
 func (s *Store) InsertRequest(ctx context.Context, r Request) (int64, error) {
 	res, err := s.write.ExecContext(ctx, `INSERT INTO requests (
 		started_at, model, endpoint, method, status, status_class, slot, task_id, ttft_ms, total_ms,
-		prompt_n, cache_n, prompt_ms, predicted_n, predicted_ms, predicted_per_second, stream, error, gaps
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		prompt_n, cache_n, prompt_ms, predicted_n, predicted_ms, predicted_per_second, draft_n, draft_accepted, stream, error, gaps
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.StartedAt.UnixMicro(), r.Model, r.Endpoint, r.Method, r.Status, r.StatusClass(), r.Slot, r.TaskID,
 		r.TTFTMs, r.TotalMs, r.PromptN, r.CacheN, r.PromptMs, r.PredictedN, r.PredictedMs, r.PredictedPerSecond,
-		r.Stream, r.Error, nullJSON(r.Gaps))
+		r.DraftN, r.DraftAccepted, r.Stream, r.Error, nullJSON(r.Gaps))
 	if err != nil {
 		return 0, fmt.Errorf("store: insert request: %w", err)
 	}
@@ -325,7 +327,7 @@ func (s *Store) GetRequestBody(ctx context.Context, requestID int64) (request, r
 }
 
 const requestColumns = `id, started_at, model, endpoint, method, status, slot, task_id, ttft_ms, total_ms,
-	prompt_n, cache_n, prompt_ms, predicted_n, predicted_ms, predicted_per_second, stream, error, gaps`
+	prompt_n, cache_n, prompt_ms, predicted_n, predicted_ms, predicted_per_second, draft_n, draft_accepted, stream, error, gaps`
 
 func scanRequest(row interface{ Scan(...any) error }) (Request, error) {
 	var (
@@ -337,7 +339,7 @@ func scanRequest(row interface{ Scan(...any) error }) (Request, error) {
 	)
 	err := row.Scan(&r.ID, &startedAt, &r.Model, &r.Endpoint, &r.Method, &r.Status, &slot, &taskID,
 		&r.TTFTMs, &r.TotalMs, &r.PromptN, &r.CacheN, &r.PromptMs, &r.PredictedN, &r.PredictedMs,
-		&r.PredictedPerSecond, &r.Stream, &r.Error, &gaps)
+		&r.PredictedPerSecond, &r.DraftN, &r.DraftAccepted, &r.Stream, &r.Error, &gaps)
 	if err != nil {
 		return Request{}, err
 	}

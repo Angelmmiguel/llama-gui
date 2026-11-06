@@ -300,6 +300,7 @@ Order keeps a usable product at each step: M3 is already a working managed llama
 - [x] Speculative decoding in profiles: MTP, draft models and n-gram types
 - [x] Library tells apart files with the same name from different repos, by size, and keeps them apart on disk
 - [x] Live speculation in the dock and Slots: its type, and the share of drafts accepted
+- [x] Draft tokens per request, in Requests, its export and the Playground
 
 ### Found testing on a real GPU (RTX 3060, driver 615)
 

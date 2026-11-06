@@ -5,6 +5,7 @@ import {
 	cacheView,
 	curlFor,
 	delayBars,
+	draftsKept,
 	emptySettings,
 	reasoningEfforts,
 	SseParser,
@@ -243,5 +244,32 @@ describe('reasoning effort', () => {
 		const picked = { ...emptySettings(), reasoningEffort: 'high' };
 		expect(buildRequest(picked, 'm', [user]).reasoning_effort).toBe('high');
 		expect(withProfileDefaults(picked).reasoningEffort).toBe('');
+	});
+});
+
+describe('speculative decoding in a reply', () => {
+	const real: ChatMessage = {
+		...reply(),
+		done: true,
+		timings: {
+			prompt_n: 16,
+			predicted_n: 6876,
+			predicted_ms: 72147.089,
+			predicted_per_second: 95.29,
+			draft_n: 5408,
+			draft_n_accepted: 4171
+		}
+	};
+
+	it('shows how much was kept, from a real MTP run', () => {
+		expect(draftsKept(real)).toBe('77% · 4,171 / 5,408');
+		expect(statsLine(real)).toContain('77% of drafts kept');
+		expect(timingsGrid(real).find((t) => t.k === 'drafts kept')?.v).toBe('77% · 4,171 / 5,408');
+	});
+
+	it('stays quiet without it', () => {
+		expect(draftsKept({ ...reply(), timings: { predicted_n: 3 } })).toBeUndefined();
+		expect(draftsKept(undefined)).toBeUndefined();
+		expect(timingsGrid(reply()).some((t) => t.k === 'drafts kept')).toBe(false);
 	});
 });

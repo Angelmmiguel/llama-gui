@@ -89,7 +89,7 @@ func TestMigrationsAreIdempotentAndKeepData(t *testing.T) {
 	if err := s.read.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != 3 {
+	if version != 4 {
 		t.Errorf("user_version = %d", version)
 	}
 	_ = s.Close()
@@ -221,7 +221,7 @@ func TestRequestRoundTrip(t *testing.T) {
 	in := Request{
 		StartedAt: t0, Model: "m", Endpoint: "/v1/chat/completions", Method: "POST", Status: 503,
 		Slot: &slot, TaskID: &task, TTFTMs: 1.5, TotalMs: 2.5, PromptN: 3, CacheN: 4, PromptMs: 5.5,
-		PredictedN: 6, PredictedMs: 7.5, PredictedPerSecond: 8.5, Stream: true, Error: "boom",
+		PredictedN: 6, PredictedMs: 7.5, PredictedPerSecond: 8.5, DraftN: 9, DraftAccepted: 4, Stream: true, Error: "boom",
 		Gaps: json.RawMessage(`[1,2]`),
 	}
 	id, err := s.InsertRequest(ctx, in)
@@ -235,7 +235,7 @@ func TestRequestRoundTrip(t *testing.T) {
 	if got.ID != id || !got.StartedAt.Equal(t0) || got.Model != "m" || got.Endpoint != in.Endpoint ||
 		got.Method != "POST" || got.Status != 503 || got.StatusClass() != 5 || *got.Slot != 0 || *got.TaskID != 42 ||
 		got.TTFTMs != 1.5 || got.TotalMs != 2.5 || got.PromptN != 3 || got.CacheN != 4 || got.PromptMs != 5.5 ||
-		got.PredictedN != 6 || got.PredictedMs != 7.5 || got.PredictedPerSecond != 8.5 || !got.Stream ||
+		got.PredictedN != 6 || got.PredictedMs != 7.5 || got.PredictedPerSecond != 8.5 || got.DraftN != 9 || got.DraftAccepted != 4 || !got.Stream ||
 		got.Error != "boom" || string(got.Gaps) != "[1,2]" {
 		t.Errorf("got %+v", got)
 	}
