@@ -16,6 +16,28 @@ entrypoint: it serves the dashboard, a management API, and a measured reverse pr
 `/slots`, `/metrics`, `/models`, `/props` and `/` are upstream paths, which is why the
 dashboard has its own prefix. Upstream has no `/api` routes.
 
+## Browser access
+
+There is no authentication, so nothing may let another site act through a visitor's browser.
+Clients that send neither `Sec-Fetch-Site` nor `Origin`, such as curl and SDKs, are unaffected by the
+origin rules.
+
+- **Host.** `routes()` answers every path with a plain-text 403 unless the `Host` name, without port and
+  ignoring case, can't be rebound by a public site: an IP literal, a single label (`localhost`, `tower`), or a name
+  under `.local`, `.lan`, `.home`, `.internal`, `.intranet`, `.corp`, `.localdomain` or `.home.arpa`. Anything else
+  has to be in `LLAMA_GUI_ALLOWED_HOSTS`, where `*` turns the check off.
+- **Cross-site** (`proxy.CrossSite`) is any `Sec-Fetch-Site` other than `same-origin` or `none`. Without that header,
+  which browsers omit on plain HTTP to a LAN host, it is an `Origin` whose host differs from `Host`. A reverse proxy
+  must therefore forward `Host` unchanged.
+- **API.** Cross-site writes get a 403.
+- **Proxy.** Upstream's `Access-Control-*` headers are always stripped, since it allows every origin. A cross-site
+  request other than GET or HEAD gets a 403 in upstream's error shape, unless its `Origin` is in
+  `LLAMA_GUI_ALLOWED_ORIGINS` (or that is `*`) and the path is an inference route, the set the proxy measures. So
+  `/models*`, `/slots*`, `/props`, `/cors-proxy`, `/tools` and `/lora-adapters` are never reachable cross-site, even
+  with `*`. WebSocket handshakes count as writes. For an allowed origin on an inference route the proxy answers
+  `OPTIONS` itself and sets `Access-Control-Allow-Origin` to the exact origin with `Vary: Origin`. Other cross-site
+  preflights get a 403, and cross-site reads get no CORS headers, so the page can't read them.
+
 ## Packages
 
 Dependencies only point downward. Nothing imports `internal/app` except `cmd/llama-gui`;
@@ -173,9 +195,8 @@ meaning: 404, 401 when a token may be needed, 429 with `Retry-After` when known,
 | `POST /server/{start,stop,restart}` | Router control. Start and restart answer 202 while it happens, or 409 with no build or during a benchmark |
 | `GET /healthz` | Liveness, used by `llama-gui healthcheck` |
 
-`web/src/lib/api` mirrors these routes one to one. State-changing requests whose `Sec-Fetch-Site` is present and
-neither `same-origin` nor `none` get a 403: there is no authentication, so other sites must not be able to drive
-the API through a visitor's browser.
+`web/src/lib/api` mirrors these routes one to one. Cross-site state-changing requests get a 403, as
+[Browser access](#browser-access) describes.
 
 A telemetry snapshot has `time`, `server` `{state, error}`, `models[]` `{id, status, memory, slots, error}`,
 `throughput` `{decode, prefill}`, `requests` `{in_flight, processing, deferred, per_minute, ttft_p50_ms, ttft_p95_ms}`,

@@ -124,8 +124,12 @@ Everything has a default, and every variable has a matching `serve` flag.
 | `LLAMA_GUI_LOG_VERBOSITY` | `3` | `llama-server -lv` level |
 | `LLAMA_GUI_HF_TOKEN` | | Hugging Face token for gated repos (`HF_TOKEN` also works) |
 | `LLAMA_GUI_GITHUB_TOKEN` | | Optional, raises GitHub's rate limit when checking releases |
+| `LLAMA_GUI_ALLOWED_ORIGINS` | | Comma-separated origins such as `https://chat.example.com`, or `*`, whose web pages may call the inference routes. Management routes are never open to other sites. |
+| `LLAMA_GUI_ALLOWED_HOSTS` | | Comma-separated host names to serve, or `*` for any. Needed only for public-looking names: IP addresses, single-label names such as `tower`, and names under `.local`, `.lan`, `.home`, `.internal`, `.intranet`, `.corp`, `.localdomain` and `.home.arpa` always work. |
 
-llama-gui speaks plain HTTP. Put a reverse proxy in front of it for TLS.
+llama-gui speaks plain HTTP. Put a reverse proxy in front of it for TLS, keep the
+client's `Host` header when forwarding, and add a public name to
+`LLAMA_GUI_ALLOWED_HOSTS`.
 
 ### Operating it
 
