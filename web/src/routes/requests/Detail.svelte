@@ -37,14 +37,11 @@
 
 	$effect(() => {
 		const current = id;
+		// A filter clears the selection until its first row is picked: keep this one up until then.
+		if (current === null) return;
 		let stale = false;
 		overlaps = [];
 		error = '';
-		if (current === null) {
-			detail = null;
-			onload?.(null);
-			return;
-		}
 		getRequest(current)
 			.then((loaded) => {
 				if (stale) return;

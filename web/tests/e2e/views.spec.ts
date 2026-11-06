@@ -164,3 +164,24 @@ test('the Library lists the local models', async ({ page }) => {
 			.first()
 	).toBeVisible();
 });
+
+test('switching request filters keeps the page in place', async ({ page, request }) => {
+	await request.post(`${server.url}/v1/chat/completions`, {
+		data: { model: 'gemma-3-12b', max_tokens: 4, messages: [{ role: 'user', content: 'hello' }] }
+	});
+	await open(page, '/requests', 'Requests');
+	const tile = page.locator('main').getByText('SUCCESS', { exact: true });
+	await expect(tile).toBeVisible();
+	const before = await tile.elementHandle();
+
+	await page.route('**/api/v1/requests/summary*', async (route) => {
+		await new Promise((done) => setTimeout(done, 400));
+		await route.continue();
+	});
+	await page.getByRole('button', { name: 'chat', exact: true }).click();
+	await expect(page).toHaveURL(/endpoint=chat/);
+	expect(await before?.evaluate((el) => el.isConnected)).toBe(true);
+
+	await expect(page.locator('main .results')).toHaveAttribute('aria-busy', 'false');
+	expect(await before?.evaluate((el) => el.isConnected)).toBe(true);
+});

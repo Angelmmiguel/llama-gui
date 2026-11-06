@@ -66,6 +66,7 @@
 	let modelNames = $state<string[]>([]);
 	let rows = $state<RequestRecord[]>([]);
 	let cursor = $state('');
+	let loading = $state(false);
 	let loadingMore = $state(false);
 	let failure = $state('');
 	let selected = $state<RequestDetail | null>(null);
@@ -88,6 +89,7 @@
 		const run = ++generation;
 		const current = filters;
 		const query = apiFilters(current, Date.now());
+		if (fresh) loading = true;
 		try {
 			const [nextSummary, list, allModels] = await Promise.all([
 				getRequestSummary(query),
@@ -111,17 +113,21 @@
 		} catch (e) {
 			if (run !== generation) return;
 			failure = e instanceof Error ? e.message : String(e);
+			if (fresh) {
+				// The old data answers a different question, so it must not stay under the new filter.
+				summary = null;
+				rows = [];
+				cursor = '';
+			}
+		} finally {
+			if (run === generation) loading = false;
 		}
 	}
 
 	$effect(() => {
 		void listKey;
-		untrack(() => {
-			summary = null;
-			rows = [];
-			cursor = '';
-			void refresh(true);
-		});
+		// What is on screen stays until the new data arrives, so a filter never blanks the page.
+		untrack(() => void refresh(true));
 		const timer = setInterval(() => {
 			if (document.visibilityState === 'visible') void refresh(false);
 		}, REFRESH_MS);
@@ -286,114 +292,130 @@
 		<EmptyState title="No requests in {RANGES[filters.range].phrase}" detail={emptyDetail} />
 	</Panel>
 {:else if summary && scatter}
-	<Band layout="grid" min={180}>
-		{#each kpis as kpi (kpi.label)}
-			<StatTile label={kpi.label} value={kpi.value} note={kpi.note} />
-		{/each}
-	</Band>
-
-	<Band>
-		<Panel flex="3 1 620px" radius={8} aria-labelledby="scatter-heading">
-			<Scatter
-				view={scatter}
-				capped={summary.scatter.length < summary.kpis.requests}
-				onselect={select}
-			/>
-		</Panel>
-		<Panel flex="2 1 400px" radius={8} gap={18} aria-labelledby="time-heading">
-			<SectionHeading
-				id="time-heading"
-				title="WHERE THE TIME GOES"
-				subtitle="Median time per stage for each model"
-			/>
-			{#each summary.models as m (m.model)}
-				<div class="model">
-					<div class="model-head">
-						<span class="ellipsis">{m.model || 'unknown model'}</span>
-						<span class="mono-note">{formatMs(m.total_ms)} median</span>
-					</div>
-					<StackedBar
-						ratio
-						track={false}
-						gap={2}
-						height={14}
-						label="{m.model}: queue, prefill and decode"
-						segments={[
-							{ value: m.queue_ms, queued: true },
-							{ value: m.prefill_ms, color: tones.prefill },
-							{ value: m.decode_ms, color: tones.decode }
-						]}
-					/>
-					<span class="mono-note">
-						queue {formatMs(m.queue_ms)} · prefill {formatMs(m.prefill_ms)} · decode
-						{formatMs(m.decode_ms)}
-					</span>
-				</div>
+	<div class="results" class:stale={loading} aria-busy={loading}>
+		<Band layout="grid" min={180}>
+			{#each kpis as kpi (kpi.label)}
+				<StatTile label={kpi.label} value={kpi.value} note={kpi.note} />
 			{/each}
-			<div class="statuses">
-				<Eyebrow>STATUS CODES</Eyebrow>
-				<StatGrid items={statuses} columns={3} valueSize={16} labelStyle="code" />
-			</div>
-		</Panel>
-	</Band>
+		</Band>
 
-	{#if summary.truncated}
-		<span class="hint">Totals cover only the newest 50,000 requests of this range.</span>
-	{/if}
-
-	<Columns>
-		<Panel flex="3 1 640px" gap={12} aria-labelledby="list-heading">
-			<SectionHeading id="list-heading" title="RECENT · {formatInt(rows.length)} SHOWN">
-				{#snippet actions()}
-					<Button variant="ghost" size="sm" tone="muted" downloadHref={csvHref}>Export CSV</Button>
-				{/snippet}
-			</SectionHeading>
-			<ScrollX minWidth={720}>
-				<Row columns={rowColumns} gap={12} padding="0 10px 8px" header>
-					<span>TIME</span><span>ID</span><span>ENDPOINT</span><span>MODEL</span>
-					<span class="right">IN → OUT</span><span class="right">TTFT</span>
-					<span class="right">STATUS</span>
-				</Row>
-				{#each rows as r (r.id)}
-					<Row
-						columns={rowColumns}
-						gap={12}
-						padding="0 10px"
-						minHeight={40}
-						selected={filters.id === r.id}
-						onclick={() => select(r.id)}
-					>
-						<span class="dim">{clock(r.started_at)}</span>
-						<span class="dim">#{r.id}</span>
-						<span class="ellipsis">{r.method} {r.endpoint}</span>
-						<span class="secondary ellipsis">{r.model}</span>
-						<span class="right">{ioCell(r)}</span>
-						<span class="right">{ttftCell(r)}</span>
-						<span class="right ellipsis" style:color={statusColor[statusLevel(label(r))]}>
-							{label(r)}
+		<Band>
+			<Panel flex="3 1 620px" radius={8} aria-labelledby="scatter-heading">
+				<Scatter
+					view={scatter}
+					capped={summary.scatter.length < summary.kpis.requests}
+					onselect={select}
+				/>
+			</Panel>
+			<Panel flex="2 1 400px" radius={8} gap={18} aria-labelledby="time-heading">
+				<SectionHeading
+					id="time-heading"
+					title="WHERE THE TIME GOES"
+					subtitle="Median time per stage for each model"
+				/>
+				{#each summary.models as m (m.model)}
+					<div class="model">
+						<div class="model-head">
+							<span class="ellipsis">{m.model || 'unknown model'}</span>
+							<span class="mono-note">{formatMs(m.total_ms)} median</span>
+						</div>
+						<StackedBar
+							ratio
+							track={false}
+							gap={2}
+							height={14}
+							label="{m.model}: queue, prefill and decode"
+							segments={[
+								{ value: m.queue_ms, queued: true },
+								{ value: m.prefill_ms, color: tones.prefill },
+								{ value: m.decode_ms, color: tones.decode }
+							]}
+						/>
+						<span class="mono-note">
+							queue {formatMs(m.queue_ms)} · prefill {formatMs(m.prefill_ms)} · decode
+							{formatMs(m.decode_ms)}
 						</span>
-					</Row>
+					</div>
 				{/each}
-			</ScrollX>
-			{#if failure}<span class="hint">Could not refresh: {failure}</span>{/if}
-			{#if cursor}
-				<Button variant="ghost" size="sm" tone="muted" disabled={loadingMore} onclick={loadMore}>
-					{loadingMore ? 'Loading…' : 'Load more'}
-				</Button>
-			{/if}
-		</Panel>
+				<div class="statuses">
+					<Eyebrow>STATUS CODES</Eyebrow>
+					<StatGrid items={statuses} columns={3} valueSize={16} labelStyle="code" />
+				</div>
+			</Panel>
+		</Band>
 
-		<Panel as="aside" flex="2 1 420px" gap={16} aria-labelledby="detail-heading">
-			<Detail
-				id={filters.id}
-				capture={server.status?.capture}
-				onload={(detail) => (selected = detail)}
-			/>
-		</Panel>
-	</Columns>
+		{#if summary.truncated}
+			<span class="hint">Totals cover only the newest 50,000 requests of this range.</span>
+		{/if}
+
+		<Columns>
+			<Panel flex="3 1 640px" gap={12} aria-labelledby="list-heading">
+				<SectionHeading id="list-heading" title="RECENT · {formatInt(rows.length)} SHOWN">
+					{#snippet actions()}
+						<Button variant="ghost" size="sm" tone="muted" downloadHref={csvHref}>Export CSV</Button
+						>
+					{/snippet}
+				</SectionHeading>
+				<ScrollX minWidth={720}>
+					<Row columns={rowColumns} gap={12} padding="0 10px 8px" header>
+						<span>TIME</span><span>ID</span><span>ENDPOINT</span><span>MODEL</span>
+						<span class="right">IN → OUT</span><span class="right">TTFT</span>
+						<span class="right">STATUS</span>
+					</Row>
+					{#each rows as r (r.id)}
+						<Row
+							columns={rowColumns}
+							gap={12}
+							padding="0 10px"
+							minHeight={40}
+							selected={filters.id === r.id}
+							onclick={() => select(r.id)}
+						>
+							<span class="dim">{clock(r.started_at)}</span>
+							<span class="dim">#{r.id}</span>
+							<span class="ellipsis">{r.method} {r.endpoint}</span>
+							<span class="secondary ellipsis">{r.model}</span>
+							<span class="right">{ioCell(r)}</span>
+							<span class="right">{ttftCell(r)}</span>
+							<span class="right ellipsis" style:color={statusColor[statusLevel(label(r))]}>
+								{label(r)}
+							</span>
+						</Row>
+					{/each}
+				</ScrollX>
+				{#if failure}<span class="hint">Could not refresh: {failure}</span>{/if}
+				{#if cursor}
+					<Button variant="ghost" size="sm" tone="muted" disabled={loadingMore} onclick={loadMore}>
+						{loadingMore ? 'Loading…' : 'Load more'}
+					</Button>
+				{/if}
+			</Panel>
+
+			<Panel as="aside" flex="2 1 420px" gap={16} aria-labelledby="detail-heading">
+				<Detail
+					id={filters.id}
+					capture={server.status?.capture}
+					onload={(detail) => (selected = detail)}
+				/>
+			</Panel>
+		</Columns>
+	</div>
 {/if}
 
 <style>
+	.results {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-16);
+		transition: opacity 0.15s ease;
+	}
+
+	/* The delay keeps a quick answer from flickering. */
+	.stale {
+		opacity: 0.55;
+		transition-delay: 0.15s;
+	}
+
 	.model {
 		display: flex;
 		flex-direction: column;

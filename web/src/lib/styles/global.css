@@ -6,6 +6,11 @@
 @import '@fontsource/geist-mono/600.css';
 @import './tokens.css';
 
+/* Pages change height as data arrives, and the layout must not shift when the scrollbar comes and goes. */
+html {
+	scrollbar-gutter: stable;
+}
+
 body {
 	margin: 0;
 	background: var(--bg-ground);
