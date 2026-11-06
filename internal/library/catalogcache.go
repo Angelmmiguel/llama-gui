@@ -43,6 +43,7 @@ type catalogSnapshot struct {
 type catalogRepo struct {
 	Info RepoInfo            `json:"info"`
 	Meta map[string]Metadata `json:"meta"`
+	MTP  map[string]MTP      `json:"mtp,omitempty"`
 }
 
 // NewCatalogHub starts from saved, the bytes an earlier run passed to save, if they are readable.
@@ -56,6 +57,8 @@ func NewCatalogHub(ctx context.Context, client *Client, saved []byte, save func(
 	}
 	var old catalogSnapshot
 	if len(saved) > 0 && json.Unmarshal(saved, &old) == nil && old.Repos != nil {
+		// A repo that left the catalog has no more use.
+		maps.DeleteFunc(old.Repos, func(repo string, _ catalogRepo) bool { return !h.known[repo] })
 		h.snapshot = old
 	}
 	return h
@@ -101,6 +104,30 @@ func (h *CatalogHub) ReadRemoteMetadata(ctx context.Context, repo, file string) 
 			r.Meta = map[string]Metadata{}
 		}
 		r.Meta[file] = m
+	})
+	return m, nil
+}
+
+// ReadRemoteMTP answers from the snapshot for a file of a catalog repo.
+func (h *CatalogHub) ReadRemoteMTP(ctx context.Context, repo, file string) (MTP, error) {
+	if !h.known[repo] {
+		return h.Client.ReadRemoteMTP(ctx, repo, file)
+	}
+	h.mu.Lock()
+	m, ok := h.snapshot.Repos[repo].MTP[file]
+	h.mu.Unlock()
+	if ok {
+		return m, nil
+	}
+	m, err := h.Client.ReadRemoteMTP(ctx, repo, file)
+	if err != nil {
+		return MTPNone, err
+	}
+	h.remember(ctx, repo, func(r *catalogRepo) {
+		if r.MTP == nil {
+			r.MTP = map[string]MTP{}
+		}
+		r.MTP[file] = m
 	})
 	return m, nil
 }
@@ -176,7 +203,10 @@ func (h *CatalogHub) refresh(done chan struct{}) {
 				meta[file] = m
 			}
 		}
-		results = append(results, fresh{e.Repo, catalogRepo{Info: info, Meta: meta}})
+		h.mu.Lock()
+		mtp := h.snapshot.Repos[e.Repo].MTP
+		h.mu.Unlock()
+		results = append(results, fresh{e.Repo, catalogRepo{Info: info, Meta: meta, MTP: mtp}})
 	}
 	h.mu.Lock()
 	h.refreshing = false

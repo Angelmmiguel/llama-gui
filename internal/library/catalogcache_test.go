@@ -179,3 +179,36 @@ func TestCatalogHubSaysWhyTheCatalogIsEmpty(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 }
+
+func TestCatalogHubKeepsMTPAnswers(t *testing.T) {
+	b := &ggufBuilder{}
+	b.kvStr("general.architecture", "qwen35")
+	b.kvU32("qwen35.nextn_predict_layers", 1)
+	var down atomic.Bool
+	srv, hits := catalogServer(t, b.bytes(3, 1), &down)
+	store := &savedCatalog{}
+	repo := Catalog()[0].Repo
+	first := NewCatalogHub(t.Context(), NewClient(srv.Client(), srv.URL, ""), nil, store.save, quietLog())
+	if m, err := first.ReadRemoteMTP(t.Context(), repo, "m-Q8_0.gguf"); err != nil || m != MTPHeads {
+		t.Fatalf("%q %v", m, err)
+	}
+	down.Store(true)
+	asked := hits.Load()
+	second := NewCatalogHub(t.Context(), NewClient(srv.Client(), srv.URL, ""), store.bytes(), store.save, quietLog())
+	if m, err := second.ReadRemoteMTP(t.Context(), repo, "m-Q8_0.gguf"); err != nil || m != MTPHeads {
+		t.Errorf("after a restart: %q %v", m, err)
+	}
+	if hits.Load() != asked {
+		t.Error("asked the hub again")
+	}
+}
+
+func TestCatalogHubForgetsReposThatLeftTheCatalog(t *testing.T) {
+	var down atomic.Bool
+	srv, _ := catalogServer(t, testGGUF(), &down)
+	saved := []byte(`{"at":"2026-11-06T00:00:00Z","repos":{"old/gone-GGUF":{"info":{"repo":"old/gone-GGUF"}}}}`)
+	h := NewCatalogHub(t.Context(), NewClient(srv.Client(), srv.URL, ""), saved, (&savedCatalog{}).save, quietLog())
+	if _, kept := h.snapshot.Repos["old/gone-GGUF"]; kept {
+		t.Error("kept a repo no longer in the catalog")
+	}
+}

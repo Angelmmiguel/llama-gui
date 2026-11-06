@@ -36,8 +36,8 @@ const (
 	// remoteMTPBytes reaches past the model keys, which took under 4 KiB in every real file checked.
 	remoteMTPBytes = 256 << 10
 	maxTreePages   = 8
-	searchTTL      = 5 * time.Minute
-	repoTTL        = 5 * time.Minute
+	searchTTL      = time.Hour
+	repoTTL        = time.Hour
 	metaTTL        = time.Hour
 	cacheMax       = 512
 )
