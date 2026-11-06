@@ -226,6 +226,7 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, ln net.Listen
 		Downloads:    downloads,
 		Bench:        runner,
 		ReloadModels: ctrl.reloadPreset,
+		InstallIssue: ctrl.installIssue.Load,
 		Router: func() (api.Router, bool) {
 			c, ok := clients.get()
 			if !ok {

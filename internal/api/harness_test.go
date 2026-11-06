@@ -272,24 +272,25 @@ func (f *fakeTail) Tail(_ context.Context, sf store.LogFilter) ([]store.LogLine,
 
 // harness is a Handler with every dependency replaced, over a real store.
 type harness struct {
-	server    *fakeServer
-	builds    *fakeBuilds
-	releases  *fakeReleases
-	profiles  *fakeProfiles
-	router    *fakeRouter
-	up        bool
-	telemetry *fakeTelemetry
-	tail      *fakeTail
-	store     *store.Store
-	cancelled []string
-	done      chan struct{}
-	hub       *fakeHub
-	downloads *fakeDownloads
-	models    string
-	hw        hardware.Snapshot
-	reloads   int
-	checks    int
-	handler   http.Handler
+	server       *fakeServer
+	builds       *fakeBuilds
+	releases     *fakeReleases
+	profiles     *fakeProfiles
+	router       *fakeRouter
+	up           bool
+	telemetry    *fakeTelemetry
+	installIssue *InstallIssue
+	tail         *fakeTail
+	store        *store.Store
+	cancelled    []string
+	done         chan struct{}
+	hub          *fakeHub
+	downloads    *fakeDownloads
+	models       string
+	hw           hardware.Snapshot
+	reloads      int
+	checks       int
+	handler      http.Handler
 }
 
 func newHarness(t *testing.T) *harness {
@@ -341,6 +342,7 @@ func (h *harness) deps() Deps {
 		Hub:          h.hub,
 		Downloads:    h.downloads,
 		ModelsDir:    h.models,
+		InstallIssue: func() *InstallIssue { return h.installIssue },
 		MemoryMargin: 2048,
 		ReloadModels: func(context.Context) { h.reloads++ },
 		Updates:      func(context.Context) builds.UpdateInfo { return builds.UpdateInfo{Available: true, Latest: "v2"} },

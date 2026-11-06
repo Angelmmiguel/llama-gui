@@ -68,6 +68,8 @@ export interface ServerStatus {
 	pid?: number;
 	restart_count?: number;
 	last_error?: string;
+	/** Why the first install is waiting to try again. */
+	install_issue?: { error: string; rate_limited: boolean; retry_at: string };
 	active_build?: { id: string; tag: string; backend: string } | null;
 	models_loaded?: number;
 	update_available?: boolean;

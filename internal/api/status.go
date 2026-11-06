@@ -36,6 +36,15 @@ type statusResponse struct {
 	ModelsLoaded    int               `json:"models_loaded"`
 	UpdateAvailable bool              `json:"update_available"`
 	Update          builds.UpdateInfo `json:"update"`
+	InstallIssue    *InstallIssue     `json:"install_issue,omitempty"`
+}
+
+// InstallIssue is why the first install failed, and when it tries again.
+type InstallIssue struct {
+	Error string `json:"error"`
+	// RateLimited is GitHub's limit, which passes by itself or with a token.
+	RateLimited bool      `json:"rate_limited"`
+	RetryAt     time.Time `json:"retry_at"`
 }
 
 func (a *api) status(w http.ResponseWriter, r *http.Request) {
@@ -57,6 +66,9 @@ func (a *api) status(w http.ResponseWriter, r *http.Request) {
 		if man, err := a.Builds.Get(id); err == nil {
 			resp.ActiveBuild = &activeBuild{ID: man.ID, Tag: man.Tag, Backend: man.Backend}
 		}
+	}
+	if a.InstallIssue != nil {
+		resp.InstallIssue = a.InstallIssue()
 	}
 	for _, m := range a.Telemetry.Snapshot().Models {
 		if m.Status == "loaded" {

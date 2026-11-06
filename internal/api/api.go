@@ -151,6 +151,8 @@ type Deps struct {
 	Hub       Hub
 	Downloads Downloads
 	Bench     Bench
+	// InstallIssue says why the first install is waiting to try again, nil when it isn't.
+	InstallIssue func() *InstallIssue
 	// ReloadModels makes a running router rescan the models directory.
 	ReloadModels func(ctx context.Context)
 	// Router returns the router's client, or false while it is not running.

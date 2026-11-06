@@ -16,7 +16,7 @@
 	import StateLabel from '$lib/components/StateLabel.svelte';
 	import TextLink from '$lib/components/TextLink.svelte';
 	import { tones } from '$lib/components/tones';
-	import { formatBytes } from '$lib/format';
+	import { formatBytes, formatClock } from '$lib/format';
 	import { errorText, every } from '$lib/monitor/poll';
 	import { server } from '$lib/state/server.svelte';
 	import { currentJob, hardwareLines, jobEnded, jobPercent } from './setup';
@@ -41,6 +41,8 @@
 	const job = $derived(currentJob(jobs));
 	const installing = $derived(job !== null && !jobEnded(job));
 	const failed = $derived(job?.state === 'failed');
+	const issue = $derived(server.status?.install_issue);
+	const retryAt = $derived(issue ? formatClock(issue.retry_at) : '');
 
 	const needsBuild = $derived(known && !build);
 	const needsModels = $derived(modelCount === 0);
@@ -82,6 +84,10 @@
 			{#if installing && job}
 				<Spinner size={10} /> Installing llama.cpp {job.version}, {job.step || job.state}
 				{#if job.total > 0}· {Math.round(jobPercent(job))}%{/if}
+			{:else if issue?.rate_limited}
+				<span class="waiting">GitHub's rate limit stopped the install.</span> It tries again at {retryAt}.
+			{:else if issue}
+				<span class="failed">Installing llama.cpp failed.</span> It tries again at {retryAt}.
 			{:else if failed}
 				<span class="failed">Installing llama.cpp failed.</span> No build is active.
 			{:else}
@@ -138,6 +144,22 @@
 					<StateLabel color={tones.error}>The install failed</StateLabel>
 					<span class="failed" role="alert">{job.error || `Installing ${job.version} failed.`}</span
 					>
+					<div class="cta">
+						<Button size="sm" href={resolve('/builds')}>Try from Builds</Button>
+					</div>
+				{:else if issue?.rate_limited}
+					<StateLabel color={tones.warn}>Waiting for GitHub</StateLabel>
+					<span class="text">
+						GitHub allows 60 requests an hour per connection without a token, and this one has used
+						them. The install tries again by itself at {retryAt}.
+					</span>
+					<span class="text">
+						To avoid the wait, set <code>LLAMA_GUI_GITHUB_TOKEN</code> and restart.
+					</span>
+				{:else if issue}
+					<StateLabel color={tones.error}>The install failed</StateLabel>
+					<span class="failed" role="alert">{issue.error}</span>
+					<span class="text">It tries again by itself at {retryAt}.</span>
 					<div class="cta">
 						<Button size="sm" href={resolve('/builds')}>Try from Builds</Button>
 					</div>
@@ -229,6 +251,17 @@
 	.warning {
 		font-size: var(--fs-12);
 		color: var(--color-warn);
+	}
+
+	.waiting {
+		color: var(--color-warn);
+	}
+
+	code {
+		font-family: var(--font-mono);
+		font-size: var(--fs-12);
+		color: var(--fg-primary);
+		overflow-wrap: anywhere;
 	}
 
 	.failed {

@@ -159,7 +159,7 @@ meaning: 404, 401 when a token may be needed, 429 with `Retry-After` when known,
 
 | Route | Purpose |
 | --- | --- |
-| `GET /status` | `state`, `version`, `uptime_seconds`, `capture`, `log_verbosity`, `router_since`, `pid`, `restart_count`, `last_error`, `active_build` `{id, tag, backend}` or null, `models_loaded`, `update_available`, `update` `{available, latest, stable, nightly, checked_at, error}` |
+| `GET /status` | `install_issue` while a first install waits to retry; `state`, `version`, `uptime_seconds`, `capture`, `log_verbosity`, `router_since`, `pid`, `restart_count`, `last_error`, `active_build` `{id, tag, backend}` or null, `models_loaded`, `update_available`, `update` `{available, latest, stable, nightly, checked_at, error}` |
 | `GET /hardware` | Detected GPUs, CPU, RAM, disks |
 | `GET /builds` | `{builds, active}`; each is a manifest plus `active`, `supported` and `size_bytes` on disk |
 | `GET /builds/available?channel=&limit=&version=` | `{releases}`, newest first. `options` is only on each channel's newest and on an exact `version`, as it costs a download per stable release |

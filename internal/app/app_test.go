@@ -323,3 +323,41 @@ func TestLibraryRoutesAreWired(t *testing.T) {
 		t.Errorf("downloads: %d %v", code, body)
 	}
 }
+
+func TestRateLimitedFirstInstallShowsInStatus(t *testing.T) {
+	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-RateLimit-Remaining", "0")
+		w.Header().Set("X-RateLimit-Reset", fmt.Sprint(time.Now().Add(time.Hour).Unix()))
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = io.WriteString(w, `{"message":"API rate limit exceeded"}`)
+	}))
+	t.Cleanup(github.Close)
+
+	cfg := testConfig(t)
+	cfg.LlamaVersion = "stable"
+	cfg.LlamaBackend = "cpu"
+	cfg.GitHubAPI = github.URL
+	ln := listen(t, cfg.Addr)
+	base := "http://" + ln.Addr().String()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- run(ctx, cfg, quiet(), ln) }()
+	defer func() {
+		cancel()
+		<-done
+	}()
+
+	var issue map[string]any
+	waitFor(t, "the install issue to show", func() bool {
+		_, body := get(t, base+"/api/v1/status")
+		issue, _ = body["install_issue"].(map[string]any)
+		return issue != nil
+	})
+	if issue["rate_limited"] != true || !strings.Contains(fmt.Sprint(issue["error"]), "rate limit") {
+		t.Errorf("%v", issue)
+	}
+	retry, err := time.Parse(time.RFC3339Nano, fmt.Sprint(issue["retry_at"]))
+	if err != nil || retry.Before(time.Now().Add(50*time.Minute)) {
+		t.Errorf("retry_at %v %v: should wait out the limit", issue["retry_at"], err)
+	}
+}

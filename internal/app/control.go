@@ -7,8 +7,10 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/Angelmmiguel/llama-gui/internal/api"
 	"github.com/Angelmmiguel/llama-gui/internal/builds"
 	"github.com/Angelmmiguel/llama-gui/internal/hardware"
 	"github.com/Angelmmiguel/llama-gui/internal/logs"
@@ -46,6 +48,8 @@ type control struct {
 	log    *slog.Logger
 	// benching says a benchmark is running; nil until the runner exists.
 	benching func() bool
+	// installIssue says why the first install is waiting to try again.
+	installIssue atomic.Pointer[api.InstallIssue]
 
 	// ctx bounds the background work, whose request has long been answered.
 	ctx    context.Context
@@ -246,6 +250,7 @@ func (c *control) firstStart(ctx context.Context, version, backend string) {
 	if backend != builds.AutoBackend {
 		backend = resolveBackend(ctx, backend, c.hw)
 	}
+	defer c.installIssue.Store(nil)
 	for attempt := 0; ; attempt++ {
 		err := c.mgr.EnsureFirstInstall(ctx, version, backend)
 		if err == nil {
@@ -256,6 +261,9 @@ func (c *control) firstStart(ctx context.Context, version, backend string) {
 		}
 		delay := installRetryDelay(err, attempt, time.Now())
 		c.log.Warn("first install failed", "error", err, "retry_in", delay)
+		c.installIssue.Store(&api.InstallIssue{
+			Error: err.Error(), RateLimited: errors.Is(err, releases.ErrRateLimited), RetryAt: time.Now().Add(delay),
+		})
 		if attempt == 0 {
 			c.pipe.Event(eventBuildInstallFailed, logs.SeverityError, "Installing "+version+" failed", map[string]string{"version": version, "error": err.Error()})
 			// With no build this leaves the router stopped, with the reason in its status.

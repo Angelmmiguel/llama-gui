@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/Angelmmiguel/llama-gui/internal/builds"
 	"github.com/Angelmmiguel/llama-gui/internal/supervisor"
@@ -70,5 +71,20 @@ func TestServerControl(t *testing.T) {
 	code, body := h.sendJSON(t, http.MethodPost, "/api/v1/server/restart", "")
 	if code != http.StatusInternalServerError || body["error"] != "internal error; see the server log" {
 		t.Errorf("the cause may have reached the client: %d %v", code, body)
+	}
+}
+
+func TestStatusSaysWhyTheFirstInstallIsWaiting(t *testing.T) {
+	h := newHarness(t)
+	_, body := h.sendJSON(t, http.MethodGet, "/api/v1/status", "")
+	if _, ok := body["install_issue"]; ok {
+		t.Errorf("an issue without one: %v", body)
+	}
+	retry := time.Date(2026, 11, 6, 9, 49, 53, 0, time.UTC)
+	h.installIssue = &InstallIssue{Error: "github rate limit exceeded", RateLimited: true, RetryAt: retry}
+	_, body = h.sendJSON(t, http.MethodGet, "/api/v1/status", "")
+	issue, _ := body["install_issue"].(map[string]any)
+	if issue["rate_limited"] != true || issue["error"] != "github rate limit exceeded" || issue["retry_at"] != "2026-11-06T09:49:53Z" {
+		t.Errorf("%v", body)
 	}
 }

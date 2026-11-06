@@ -668,3 +668,23 @@ test('Builds shows it is reading releases, and takes a tag under other', async (
 	await expect(page.getByLabel('Tag')).toHaveCount(0);
 	await expect(page.getByLabel('Release')).toBeVisible();
 });
+
+test('a rate-limited first install says why and when it tries again', async ({ page }) => {
+	await page.route('**/api/v1/status', async (route) => {
+		const res = await route.fetch();
+		const body = await res.json();
+		delete body.active_build;
+		body.state = 'stopped';
+		body.install_issue = {
+			error: 'github rate limit exceeded',
+			rate_limited: true,
+			retry_at: '2026-11-06T09:49:53Z'
+		};
+		await route.fulfill({ response: res, json: body });
+	});
+	await page.goto(`${server.url}/ui/`);
+	await expect(page.getByText('Waiting for GitHub')).toBeVisible();
+	await expect(page.locator('main').getByText('LLAMA_GUI_GITHUB_TOKEN')).toBeVisible();
+	await page.goto(`${server.url}/ui/logs`);
+	await expect(page.getByText(/GitHub's rate limit stopped the install/)).toBeVisible();
+});
