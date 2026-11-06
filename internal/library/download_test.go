@@ -348,3 +348,68 @@ func TestProgressSpeedAndETA(t *testing.T) {
 		t.Errorf("speed %d eta %d", j.BytesPerSec, j.ETA)
 	}
 }
+
+func TestDownloadSameNameFromAnotherRepoIsKeptApart(t *testing.T) {
+	data := bytes.Repeat([]byte("x"), 4096)
+	h := &dlHub{files: map[string][]byte{"m-Q4_K_M.gguf": data}}
+	q, dir := newQueue(t, h, nil)
+	other := filepath.Join(dir, "m-Q4_K_M.gguf")
+	if err := os.WriteFile(other, []byte("another repo's build of it"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	j, err := q.Enqueue(context.Background(), "u/r", "m-Q4_K_M.gguf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if done := waitFor(t, q, j.ID, JobDone, JobFailed); done.State != JobDone {
+		t.Fatalf("%+v", done)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "m-Q4_K_M--u-r", "m-Q4_K_M.gguf"))
+	if err != nil || !bytes.Equal(got, data) {
+		t.Fatalf("not saved apart: %v", err)
+	}
+	if kept, err := os.ReadFile(other); err != nil || string(kept) != "another repo's build of it" {
+		t.Errorf("the other model changed: %q %v", kept, err)
+	}
+	if _, err := q.Enqueue(context.Background(), "u/r", "m-Q4_K_M.gguf"); !errors.Is(err, ErrExists) {
+		t.Errorf("re-enqueue: %v", err)
+	}
+}
+
+func TestInventory(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name string, size int) {
+		t.Helper()
+		p := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, make([]byte, size), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("single.gguf", 10)
+	write("model/inner.gguf", 20)
+	write(".hidden.partial/inner.gguf", 30)
+	write("notes.txt", 40)
+
+	inv := ReadInventory(dir)
+	for _, tc := range []struct {
+		file File
+		want string
+	}{
+		{File{Name: "single.gguf", Size: 10}, "single.gguf"},
+		{File{Name: "sub/dir/inner.gguf", Size: 20}, "model"},
+		{File{Name: "inner.gguf", Size: 21}, ""},
+		{File{Name: "inner.gguf", Size: 30}, ""},
+		{File{Name: "notes.txt", Size: 40}, ""},
+	} {
+		if got := inv.Find(tc.file); got != tc.want {
+			t.Errorf("%+v: got %q, want %q", tc.file, got, tc.want)
+		}
+	}
+	if got := ReadInventory(filepath.Join(dir, "missing")); len(got) != 0 {
+		t.Errorf("missing directory: %v", got)
+	}
+}

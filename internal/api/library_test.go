@@ -533,3 +533,25 @@ func TestLibraryRepoMTP(t *testing.T) {
 		t.Errorf("missing repo: %d", code)
 	}
 }
+
+func TestLibraryRepoFindsExactlyTheLocalFile(t *testing.T) {
+	h := newHarness(t)
+	gpuMachine(h)
+	h.hub.meta = metaFixture()
+	if err := os.WriteFile(filepath.Join(h.models, "m-Q4_K_M.gguf"), make([]byte, 100), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.hub.repos["u/same"] = library.RepoInfo{Variants: []library.Variant{
+		{ID: "a", Quant: "Q4_K_M", SizeBytes: 100, Files: []library.File{{Name: "m-Q4_K_M.gguf", Size: 100}}},
+	}}
+	h.hub.repos["u/other-build"] = library.RepoInfo{Variants: []library.Variant{
+		{ID: "a", Quant: "Q4_K_M", SizeBytes: 200, Files: []library.File{{Name: "m-Q4_K_M.gguf", Size: 200}}},
+	}}
+	for repo, want := range map[string]any{"u/same": "m-Q4_K_M.gguf", "u/other-build": nil} {
+		_, body := h.sendJSON(t, http.MethodGet, "/api/v1/library/repo?repo="+repo, "")
+		row, _ := body["repo"].(map[string]any)
+		if got := asList(t, row, "variants")[0]["local_path"]; got != want {
+			t.Errorf("%s: local_path = %v, want %v", repo, got, want)
+		}
+	}
+}

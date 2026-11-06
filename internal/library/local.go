@@ -68,6 +68,50 @@ func Scan(modelsDir string) ([]LocalModel, error) {
 	return out, nil
 }
 
+// Inventory says where GGUF files already are, without reading them, by name and size: repos
+// reuse file names for different builds of a model, such as with and without MTP heads.
+type Inventory map[inventoryKey]string
+
+type inventoryKey struct {
+	name string
+	size int64
+}
+
+// ReadInventory lists the models directory. A directory it cannot read is just an empty inventory.
+func ReadInventory(modelsDir string) Inventory {
+	out := Inventory{}
+	add := func(modelPath, file string, e os.DirEntry) {
+		if info, err := e.Info(); err == nil && isGGUF(e.Name()) {
+			out[inventoryKey{file, info.Size()}] = modelPath
+		}
+	}
+	entries, err := os.ReadDir(modelsDir)
+	if err != nil {
+		return out
+	}
+	for _, e := range entries {
+		switch {
+		case strings.HasPrefix(e.Name(), "."):
+		case e.IsDir():
+			inner, err := os.ReadDir(filepath.Join(modelsDir, e.Name()))
+			if err != nil {
+				continue
+			}
+			for _, f := range inner {
+				add(e.Name(), f.Name(), f)
+			}
+		case e.Type().IsRegular():
+			add(e.Name(), e.Name(), e)
+		}
+	}
+	return out
+}
+
+// Find returns the path of the local model holding this file of a repo, empty if there is none.
+func (i Inventory) Find(f File) string {
+	return i[inventoryKey{filepath.Base(f.Name), f.Size}]
+}
+
 func readMeta(path string) *Metadata {
 	f, err := os.Open(path)
 	if err != nil {

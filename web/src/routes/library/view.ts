@@ -276,14 +276,14 @@ export function downloadState(
 	repo: string,
 	files: readonly string[],
 	jobs: readonly DownloadJob[],
-	local: readonly LocalModel[]
+	/** Where the server found exactly these files. A name alone says nothing: repos reuse them. */
+	localPath: string | undefined
 ): DownloadState {
 	const main = files.find((f) => !isMMProj(f)) ?? files[0];
 	if (main === undefined) return { kind: 'available' };
 	const job = jobs.find((j) => j.repo === repo && isActive(j) && j.files.some((f) => f === main));
 	if (job) return { kind: 'active', job };
-	const name = baseName(main);
-	return local.some((m) => m.files.includes(name)) ? { kind: 'on-disk' } : { kind: 'available' };
+	return localPath ? { kind: 'on-disk' } : { kind: 'available' };
 }
 
 export const isActive = (j: DownloadJob) => j.state === 'queued' || j.state === 'downloading';
@@ -327,15 +327,12 @@ export function headroomLabel(hw: LibraryHardware | null): string {
 	return hw ? `${formatBytes(hw.headroom_bytes, 0)} headroom kept free.` : '';
 }
 
-/** The local model made from these downloaded files, if it is on disk. */
+/** The local model at the path the server found a variant's files. */
 export function localModelFor(
-	files: readonly string[],
+	path: string | undefined,
 	local: readonly LocalModel[]
 ): LocalModel | undefined {
-	const main = files.find((f) => !isMMProj(f)) ?? files[0];
-	if (main === undefined) return undefined;
-	const name = baseName(main);
-	return local.find((m) => m.files.includes(name));
+	return path ? local.find((m) => m.path === path) : undefined;
 }
 
 /** The newest job for these files among those being followed. */

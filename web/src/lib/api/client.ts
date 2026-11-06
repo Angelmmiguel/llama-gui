@@ -556,6 +556,8 @@ export interface RepoVariant {
 	/** The variant's files plus the mmproj a multimodal model needs. */
 	download_files: string[];
 	download_bytes: number;
+	/** The local model holding exactly this file, by name and size. */
+	local_path?: string;
 }
 
 export interface RepoRow {
@@ -590,6 +592,7 @@ export interface LibrarySuggestion {
 	metadata: GgufMetadata;
 	download_files: string[];
 	download_bytes: number;
+	local_path?: string;
 }
 
 export interface DownloadJob {

@@ -122,6 +122,7 @@
 	let tracked = $state.raw<ReadonlySet<string>>(new Set());
 	let hub = $state.raw<{ source: string; results: RepoRow[]; next: string } | null>(null);
 	let hubLoadingMore = $state(false);
+	let filesVersion = $state(0);
 	// Per repo and variant, as read from the headers.
 	let mtp = $state<Record<string, Record<string, string>>>({});
 	let hubError = $state('');
@@ -248,6 +249,7 @@
 
 	$effect(() => {
 		const params = fitQuery;
+		void filesVersion;
 		const controller = new AbortController();
 		suggestionsError = '';
 		suggestionsFresh = false;
@@ -278,6 +280,7 @@
 
 	$effect(() => {
 		if (tab !== 'hub') return;
+		void filesVersion;
 		const params = { ...fitQuery, q: appliedQuery, filter: apiFilter };
 		const key = hubKey(appliedQuery, apiFilter);
 		const controller = new AbortController();
@@ -379,7 +382,7 @@
 				jobs = list;
 				track(list);
 				const done = list.filter((j) => j.state === 'done').map((j) => j.id);
-				if (known && done.some((id) => !known?.has(id))) refreshFiles();
+				if (known && done.some((id) => !known?.has(id))) filesChanged();
 				known = new Set(done);
 			} catch {
 				// The next tick tries again, and the list keeps its last good state meanwhile.
@@ -395,6 +398,13 @@
 
 	function forget(job: DownloadJob) {
 		tracked = new Set([...tracked].filter((id) => id !== job.id));
+	}
+
+	/** What is on disk changed, so the rows saying so ask again. */
+	function filesChanged() {
+		filesVersion++;
+		lookups = {};
+		refreshFiles();
 	}
 
 	function refreshFiles() {
@@ -441,7 +451,7 @@
 	async function removeModel(m: LocalModel) {
 		confirming = null;
 		await act(`delete:${m.path}`, () => deleteLocalModel(m.path), `Deleted ${m.path}.`);
-		refreshFiles();
+		filesChanged();
 	}
 
 	const toggle = (which: 'local' | 'hub', id: string, open: boolean) => {
@@ -480,10 +490,11 @@
 	files: readonly string[],
 	label: string,
 	size: 'sm' | 'ml',
-	block: boolean
+	block: boolean,
+	localPath: string | undefined
 )}
-	{@const state = downloadState(repo, files, jobs, local ?? [])}
-	{@const model = localModelFor(files, local ?? [])}
+	{@const state = downloadState(repo, files, jobs, localPath)}
+	{@const model = localModelFor(localPath, local ?? [])}
 	{#if state.kind === 'on-disk' && model}
 		{@const action = localAction(model)}
 		{#if action.kind === 'profile'}
@@ -531,9 +542,15 @@
 	{/if}
 {/snippet}
 
-{#snippet progress(repo: string, files: readonly string[], name: string, cancellable: boolean)}
+{#snippet progress(
+	repo: string,
+	files: readonly string[],
+	name: string,
+	cancellable: boolean,
+	localPath: string | undefined
+)}
 	{@const job = trackedJob(repo, files, jobs, tracked)}
-	{@const model = localModelFor(files, local ?? [])}
+	{@const model = localModelFor(localPath, local ?? [])}
 	{#if model?.status === 'loading'}
 		<JobPanel view={loadView(model)} label="Loading {name}" />
 	{:else if job}
@@ -736,9 +753,9 @@
 					<span class="variant-bar"><FitBar fit={v.fit} {scale} bare /></span>
 					<span style:color={verdictColor(v.fit)}>{verdictLabel(v.fit)} · {fitTotal(v.fit)}</span>
 					<span class="variant-action">
-						{@render downloadButton(r.repo, v.download_files, 'Download', 'sm', true)}
+						{@render downloadButton(r.repo, v.download_files, 'Download', 'sm', true, v.local_path)}
 					</span>
-					{@render progress(r.repo, v.download_files, `${r.name} ${v.quant}`, false)}
+					{@render progress(r.repo, v.download_files, `${r.name} ${v.quant}`, false, v.local_path)}
 				</div>
 			{/each}
 			<span class="hint">{repoHint(r, disk?.path ?? '')}</span>
@@ -853,14 +870,15 @@
 					<FitBar fit={s.fit} {scale} height={12} />
 					<p class="description">{s.note}</p>
 					<div class="card-action">
-						{@render progress(s.repo, s.download_files, s.name, true)}
-						{#if !trackedJob(s.repo, s.download_files, jobs, tracked) && localModelFor(s.download_files, local ?? [])?.status !== 'loading'}
+						{@render progress(s.repo, s.download_files, s.name, true, s.local_path)}
+						{#if !trackedJob(s.repo, s.download_files, jobs, tracked) && localModelFor(s.local_path, local ?? [])?.status !== 'loading'}
 							{@render downloadButton(
 								s.repo,
 								s.download_files,
 								`Download ${s.quant} · ${formatBytes(s.download_bytes)}`,
 								'ml',
-								true
+								true,
+								s.local_path
 							)}
 						{/if}
 					</div>

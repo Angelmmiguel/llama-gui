@@ -310,6 +310,8 @@ type variantJSON struct {
 	// DownloadFiles is the variant's files plus the mmproj a multimodal model needs.
 	DownloadFiles []string `json:"download_files"`
 	DownloadBytes int64    `json:"download_bytes"`
+	// LocalPath is the local model that holds exactly this variant, empty if there is none.
+	LocalPath string `json:"local_path,omitempty"`
 }
 
 // repoJSON is a row of the hub list. Variants, Metadata and Best are absent on a
@@ -349,6 +351,14 @@ func mmprojFor(v library.Variant, mmproj []library.File) (library.File, bool) {
 		return mmproj[i], true
 	}
 	return mmproj[0], true
+}
+
+// localPathOf finds a variant by its first file, the one its name comes from.
+func localPathOf(inventory library.Inventory, v library.Variant) string {
+	if len(v.Files) == 0 {
+		return ""
+	}
+	return inventory.Find(v.Files[0])
 }
 
 func downloadOf(v library.Variant, mmproj []library.File) ([]string, int64) {
@@ -407,6 +417,7 @@ func (a *api) repoRow(ctx context.Context, repo string, p fitParams) (repoJSON, 
 	row.Variants = make([]variantJSON, 0, len(info.Variants))
 	main := mainStem(info.Variants)
 	metas := map[string]library.Metadata{}
+	inventory := library.ReadInventory(a.ModelsDir)
 	for _, v := range info.Variants {
 		stem := variantStem(v)
 		meta, read := metas[stem]
@@ -423,6 +434,7 @@ func (a *api) repoRow(ctx context.Context, repo string, p fitParams) (repoJSON, 
 		}
 		out := variantJSON{Variant: v, Fit: p.estimate(meta, v.SizeBytes)}
 		out.DownloadFiles, out.DownloadBytes = downloadOf(v, info.MMProj)
+		out.LocalPath = localPathOf(inventory, v)
 		row.Variants = append(row.Variants, out)
 	}
 	row.Best = bestVariant(row.Variants, main)
@@ -587,6 +599,7 @@ type suggestionJSON struct {
 	Metadata      library.Metadata `json:"metadata"`
 	DownloadFiles []string         `json:"download_files"`
 	DownloadBytes int64            `json:"download_bytes"`
+	LocalPath     string           `json:"local_path,omitempty"`
 }
 
 func (a *api) librarySuggestions(w http.ResponseWriter, r *http.Request) {
@@ -607,6 +620,7 @@ func (a *api) librarySuggestions(w http.ResponseWriter, r *http.Request) {
 		cands[i] = a.mainCandidate(ctx, c)
 	}
 	out := []suggestionJSON{}
+	inventory := library.ReadInventory(a.ModelsDir)
 	for _, s := range library.Suggest(cands, p.hw, p.ctx, p.kv) {
 		row := suggestionJSON{Suggestion: s}
 		if i := slices.IndexFunc(cands, func(c library.Candidate) bool { return c.Repo == s.Repo }); i >= 0 {
@@ -617,6 +631,7 @@ func (a *api) librarySuggestions(w http.ResponseWriter, r *http.Request) {
 			mmproj = info.MMProj
 		}
 		row.DownloadFiles, row.DownloadBytes = downloadOf(s.Variant, mmproj)
+		row.LocalPath = localPathOf(inventory, s.Variant)
 		out = append(out, row)
 	}
 	WriteJSON(w, http.StatusOK, map[string]any{"suggestions": out, "hardware": p.hw})

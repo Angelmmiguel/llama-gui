@@ -298,6 +298,7 @@ Order keeps a usable product at each step: M3 is already a working managed llama
 - [x] Library shows download and load progress where you started it, and a skeleton while suggestions are slow
 - [x] Playground view for quick chats, with the timings of each reply
 - [x] Speculative decoding in profiles: MTP, draft models and n-gram types
+- [x] Library tells apart files with the same name from different repos, by size, and keeps them apart on disk
 
 ### Found testing on a real GPU (RTX 3060, driver 615)
 

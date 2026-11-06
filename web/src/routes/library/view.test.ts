@@ -183,18 +183,18 @@ describe('downloadState', () => {
 	const files = ['m-Q8_0.gguf', 'mmproj-m.gguf'];
 
 	it('knows what is on its way and what is already here', () => {
-		expect(downloadState('u/m-GGUF', files, [], [])).toEqual({ kind: 'available' });
+		expect(downloadState('u/m-GGUF', files, [], undefined)).toEqual({ kind: 'available' });
 		const running = job({ files });
-		expect(downloadState('u/m-GGUF', files, [running], [])).toEqual({
+		expect(downloadState('u/m-GGUF', files, [running], undefined)).toEqual({
 			kind: 'active',
 			job: running
 		});
-		expect(downloadState('u/m-GGUF', files, [job({ files, state: 'failed' })], [])).toEqual({
+		expect(downloadState('u/m-GGUF', files, [job({ files, state: 'failed' })], undefined)).toEqual({
 			kind: 'available'
 		});
-		expect(
-			downloadState('u/m-GGUF', ['sub/m-Q8_0.gguf'], [], [local({ files: ['m-Q8_0.gguf'] })])
-		).toEqual({ kind: 'on-disk' });
+		expect(downloadState('u/m-GGUF', ['sub/m-Q8_0.gguf'], [], 'm-Q8_0')).toEqual({
+			kind: 'on-disk'
+		});
 	});
 });
 
@@ -298,10 +298,10 @@ describe('download and load panels', () => {
 	});
 
 	it('finds the model a download became', () => {
-		const m = { files: ['m-Q8_0.gguf'] } as LocalModel;
-		expect(localModelFor(['dir/m-Q8_0.gguf'], [m])).toBe(m);
-		expect(localModelFor(['other.gguf'], [m])).toBeUndefined();
-		expect(localModelFor([], [m])).toBeUndefined();
+		const m = { path: 'dir' } as LocalModel;
+		expect(localModelFor('dir', [m])).toBe(m);
+		expect(localModelFor('other', [m])).toBeUndefined();
+		expect(localModelFor(undefined, [m])).toBeUndefined();
 	});
 });
 

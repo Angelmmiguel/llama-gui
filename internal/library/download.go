@@ -140,6 +140,7 @@ func (q *Queue) Enqueue(ctx context.Context, repo string, files ...string) (Job,
 	j := &job{}
 	j.Repo = repo
 	var mainBase string
+	var mainSize int64
 	seen := map[string]bool{}
 	for _, name := range files {
 		base, err := validRepoFile(name)
@@ -156,6 +157,7 @@ func (q *Queue) Enqueue(ctx context.Context, repo string, files ...string) (Job,
 		seen[base] = true
 		if !isMMProjName(base) && mainBase == "" || !isMMProjName(base) && base < mainBase {
 			mainBase = base
+			mainSize = f.Size
 		}
 		j.files = append(j.files, f)
 		j.Files = append(j.Files, name)
@@ -166,19 +168,35 @@ func (q *Queue) Enqueue(ctx context.Context, repo string, files ...string) (Job,
 	}
 	j.Variant = quantFromName(mainBase)
 	j.isDir = len(files) > 1
+	stem := strings.TrimSuffix(mainBase, ".gguf")
+	if loc := shardRe.FindStringIndex(mainBase); loc != nil {
+		stem = mainBase[:loc[0]]
+	}
+	inDir := func(name string) {
+		j.isDir = true
+		j.final = filepath.Join(q.dir, name)
+		j.work = filepath.Join(q.dir, "."+name+".partial")
+	}
 	if j.isDir {
-		stem := strings.TrimSuffix(mainBase, ".gguf")
-		if loc := shardRe.FindStringIndex(mainBase); loc != nil {
-			stem = mainBase[:loc[0]]
-		}
-		j.final = filepath.Join(q.dir, stem)
-		j.work = filepath.Join(q.dir, "."+stem+".partial")
+		inDir(stem)
 	} else {
 		j.final = filepath.Join(q.dir, mainBase)
 		j.work = j.final + ".partial"
 	}
 	if _, err := os.Lstat(j.final); err == nil {
-		return Job{}, fmt.Errorf("%w: %s", ErrExists, filepath.Base(j.final))
+		mainPath := j.final
+		if j.isDir {
+			mainPath = filepath.Join(j.final, mainBase)
+		}
+		if st, err := os.Stat(mainPath); err == nil && st.Size() == mainSize {
+			return Job{}, fmt.Errorf("%w: %s", ErrExists, filepath.Base(j.final))
+		}
+		// The same name from another repo is another model: an MTP build and a plain one of a
+		// quant share their file name. It goes next to the other, in a directory named for the repo.
+		inDir(stem + "--" + strings.ReplaceAll(repo, "/", "-"))
+		if _, err := os.Lstat(j.final); err == nil {
+			return Job{}, fmt.Errorf("%w: %s", ErrExists, filepath.Base(j.final))
+		}
 	}
 	if err := q.checkSpace(j); err != nil {
 		return Job{}, err
