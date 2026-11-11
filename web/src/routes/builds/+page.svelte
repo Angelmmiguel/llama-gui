@@ -35,6 +35,7 @@
 	import { backendLabel } from '$lib/monitor/overview';
 	import { errorText, every } from '$lib/monitor/poll';
 	import { server } from '$lib/state/server.svelte';
+	import ExternalBuild from './ExternalBuild.svelte';
 	import InstalledBuilds from './InstalledBuilds.svelte';
 	import Timeline from './Timeline.svelte';
 	import UpdateSteps from './UpdateSteps.svelte';
@@ -99,6 +100,8 @@
 	let buildErrors = $state.raw<Record<string, string>>({});
 
 	const active = $derived(builds.find((b) => b.id === activeId));
+	// A build from LLAMA_GUI_LLAMA_DIR is the only one: there is nothing to install or switch to.
+	const external = $derived(active?.path ? { ...active, path: active.path } : null);
 	const info = $derived(checkInfo ?? server.status?.update);
 	const routerState = $derived(server.state);
 	const list = $derived(channel === 'stable' ? stables : nightlies);
@@ -229,11 +232,15 @@
 	}
 
 	$effect(() => {
-		void refreshBuilds().catch(() => {});
+		void refreshBuilds()
+			.catch(() => {})
+			.then(() => {
+				// GitHub has nothing to offer an external build.
+				if (!builds.some((b) => b.path)) void loadReleases();
+			});
 		void getHardware()
 			.then((h) => (hardware = h))
 			.catch(() => {});
-		void loadReleases();
 	});
 
 	$effect(() => every(JOBS_MS, pollJobs));
@@ -431,211 +438,218 @@
 	subtitle="Which llama.cpp you run, which prebuilt it came from, and what changed since"
 >
 	{#snippet actions()}
-		<Button disabled={checking} onclick={check}>
-			{checking ? 'Checking…' : checkLabel(info, now)}
-		</Button>
+		{#if !external}
+			<Button disabled={checking} onclick={check}>
+				{checking ? 'Checking…' : checkLabel(info, now)}
+			</Button>
+		{/if}
 	{/snippet}
 </PageHeader>
 
-{#if problem}
-	<Panel tone="inset" padding="12px 16px" aria-label="Release information">
-		<span class="warn" role="status">{problem.message}</span>
-	</Panel>
-{/if}
+{#if external}
+	<ExternalBuild build={external} {routerState} />
+{:else}
+	{#if problem}
+		<Panel tone="inset" padding="12px 16px" aria-label="Release information">
+			<span class="warn" role="status">{problem.message}</span>
+		</Panel>
+	{/if}
 
-<Band as="section" aria-labelledby="up-h">
-	<Panel flex="1 1 520px" padding="24px" gap={18}>
-		<SectionHeading id="up-h" title={heroLabel} />
-		<div class="versions">
-			<div class="version">
-				<span class="label">{active ? 'Running' : 'No build'}</span>
-				<Metric value={active?.tag ?? '—'} size={40} />
-				<span class="meta">{runningMeta || noBuild.meta}</span>
-			</div>
-			{#if target}
-				<svg
-					aria-hidden="true"
-					width="40"
-					height="20"
-					viewBox="0 0 40 20"
-					fill="none"
-					stroke="var(--fg-gutter)"
-					stroke-width="2"
-					stroke-linecap="round"
-					stroke-linejoin="round"><path d="M2 10h34M28 3l8 7-8 7"></path></svg
-				>
+	<Band as="section" aria-labelledby="up-h">
+		<Panel flex="1 1 520px" padding="24px" gap={18}>
+			<SectionHeading id="up-h" title={heroLabel} />
+			<div class="versions">
 				<div class="version">
-					<span class="label">{targetHeading}</span>
-					<Metric value={target.tag} size={40} color={tones.decode} />
-					<span class="meta">{targetMeta}</span>
+					<span class="label">{active ? 'Running' : 'No build'}</span>
+					<Metric value={active?.tag ?? '—'} size={40} />
+					<span class="meta">{runningMeta || noBuild.meta}</span>
 				</div>
-			{/if}
-		</div>
-
-		{#if runningJob}
-			<div class="progress">
-				<ProgressBar
-					value={jobPercent(runningJob)}
-					height={10}
-					flow
-					darkStripes
-					label="Install progress"
-				/>
-				<div class="progress-line">
-					<span>{jobLine(runningJob)}</span>
-					<span>{jobPercent(runningJob)}%</span>
-				</div>
-				<div>
-					<Button size="sm" variant="ghost" onclick={cancel}>Cancel</Button>
-				</div>
-			</div>
-		{:else if target}
-			<div class="buttons">
-				{#if upToDate}
-					<!-- Nothing to do: the steps and the heading say so. -->
-				{:else if candidate}
-					<Button
-						variant="primary"
-						size="xl"
-						disabled={busy || candidate.supported === false}
-						onclick={() => switchTo(candidate.id)}
+				{#if target}
+					<svg
+						aria-hidden="true"
+						width="40"
+						height="20"
+						viewBox="0 0 40 20"
+						fill="none"
+						stroke="var(--fg-gutter)"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"><path d="M2 10h34M28 3l8 7-8 7"></path></svg
 					>
-						{swapState === 'switching' ? 'Switching…' : `Switch to ${candidate.tag}`}
-					</Button>
-				{:else}
-					<Button variant="primary" size="xl" disabled={busy || !option} onclick={install}>
-						{installLabel(target.tag, option)}
-					</Button>
+					<div class="version">
+						<span class="label">{targetHeading}</span>
+						<Metric value={target.tag} size={40} color={tones.decode} />
+						<span class="meta">{targetMeta}</span>
+					</div>
 				{/if}
 			</div>
-			<span class="note">{hint}</span>
-		{/if}
-		{#if candidate?.supported === false}
-			<span class="error" role="alert">
-				{candidate.tag} has no router mode, so llama-gui cannot run it. Pick a newer version.
-			</span>
-		{/if}
-		{#if targetError}<span class="error" role="alert">{target?.tag}: {targetError}</span>{/if}
-		{#if installError}<span class="error" role="alert">{installError}</span>{/if}
-		{#if failedJob?.error}<span class="error" role="alert">{failedJob.error}</span>{/if}
 
-		{#if releasesLoaded && !problem}
-			<div class="selector">
-				<Eyebrow>VERSION</Eyebrow>
-				<div class="selector-row">
-					<Segmented
-						label="Channel"
-						surface="ground"
-						options={[{ value: 'stable' }, { value: 'nightly' }, { value: 'other' }]}
-						value={otherTag ? 'other' : channel}
-						onchange={pickVersionSource}
+			{#if runningJob}
+				<div class="progress">
+					<ProgressBar
+						value={jobPercent(runningJob)}
+						height={10}
+						flow
+						darkStripes
+						label="Install progress"
 					/>
-					{#if otherTag}
-						<form
-							class="custom"
-							onsubmit={(e) => {
-								e.preventDefault();
-								void useCustomTag();
-							}}
+					<div class="progress-line">
+						<span>{jobLine(runningJob)}</span>
+						<span>{jobPercent(runningJob)}%</span>
+					</div>
+					<div>
+						<Button size="sm" variant="ghost" onclick={cancel}>Cancel</Button>
+					</div>
+				</div>
+			{:else if target}
+				<div class="buttons">
+					{#if upToDate}
+						<!-- Nothing to do: the steps and the heading say so. -->
+					{:else if candidate}
+						<Button
+							variant="primary"
+							size="xl"
+							disabled={busy || candidate.supported === false}
+							onclick={() => switchTo(candidate.id)}
 						>
-							<TextField
-								label="Tag"
-								placeholder="b8105 or v0.9.0"
-								class="mono"
-								bind:value={customTag}
-							/>
-							<Button size="ml" type="submit" disabled={customBusy || !customTag.trim()}>
-								{customBusy ? 'Looking…' : 'Use'}
-							</Button>
-						</form>
+							{swapState === 'switching' ? 'Switching…' : `Switch to ${candidate.tag}`}
+						</Button>
 					{:else}
-						<div class="select">
-							<SelectField
-								label="Release"
-								mono
-								size={38}
-								options={channelOptions}
-								value={target?.tag ?? ''}
-								onchange={(v) => (picked = v)}
-							/>
-						</div>
+						<Button variant="primary" size="xl" disabled={busy || !option} onclick={install}>
+							{installLabel(target.tag, option)}
+						</Button>
 					{/if}
 				</div>
-				{#if customError}<span class="error" role="alert">{customError}</span>{/if}
-			</div>
-		{:else if !releasesLoaded}
-			<div class="selector" aria-busy="true">
-				<div class="selector-head">
+				<span class="note">{hint}</span>
+			{/if}
+			{#if candidate?.supported === false}
+				<span class="error" role="alert">
+					{candidate.tag} has no router mode, so llama-gui cannot run it. Pick a newer version.
+				</span>
+			{/if}
+			{#if targetError}<span class="error" role="alert">{target?.tag}: {targetError}</span>{/if}
+			{#if installError}<span class="error" role="alert">{installError}</span>{/if}
+			{#if failedJob?.error}<span class="error" role="alert">{failedJob.error}</span>{/if}
+
+			{#if releasesLoaded && !problem}
+				<div class="selector">
 					<Eyebrow>VERSION</Eyebrow>
-					<span class="reading" role="status"
-						><Spinner size={10} />Reading releases from GitHub…</span
-					>
+					<div class="selector-row">
+						<Segmented
+							label="Channel"
+							surface="ground"
+							options={[{ value: 'stable' }, { value: 'nightly' }, { value: 'other' }]}
+							value={otherTag ? 'other' : channel}
+							onchange={pickVersionSource}
+						/>
+						{#if otherTag}
+							<form
+								class="custom"
+								onsubmit={(e) => {
+									e.preventDefault();
+									void useCustomTag();
+								}}
+							>
+								<TextField
+									label="Tag"
+									placeholder="b8105 or v0.9.0"
+									class="mono"
+									bind:value={customTag}
+								/>
+								<Button size="ml" type="submit" disabled={customBusy || !customTag.trim()}>
+									{customBusy ? 'Looking…' : 'Use'}
+								</Button>
+							</form>
+						{:else}
+							<div class="select">
+								<SelectField
+									label="Release"
+									mono
+									size={38}
+									options={channelOptions}
+									value={target?.tag ?? ''}
+									onchange={(v) => (picked = v)}
+								/>
+							</div>
+						{/if}
+					</div>
+					{#if customError}<span class="error" role="alert">{customError}</span>{/if}
 				</div>
-				<div class="selector-row">
-					<span class="shimmer" style:height="38px" style:width="200px"></span>
-					<span class="shimmer select" style:height="38px" style:--delay="0.15s"></span>
-				</div>
-			</div>
-		{/if}
-	</Panel>
-	<Panel flex="1 1 360px" padding="24px" gap={4}>
-		<Eyebrow>UPDATE STEPS</Eyebrow>
-		<UpdateSteps {steps} />
-		{#if upToDate && !job}
-			<span class="ok">Up to date: nothing to do.</span>
-		{/if}
-	</Panel>
-</Band>
-
-{#if timeline && active && target && !problem && timeline.items.length > 0}
-	<Timeline {timeline} running={active.tag} targetTag={target.tag} {aheadBy} {keywords} {now} />
-{/if}
-
-<div class="bottom">
-	<InstalledBuilds
-		{builds}
-		{switching}
-		{busy}
-		{now}
-		errors={buildErrors}
-		onswitch={switchTo}
-		ondelete={remove}
-	/>
-
-	<Panel flex="1 1 520px" aria-labelledby="co-h">
-		<SectionHeading
-			id="co-h"
-			title="BACKEND"
-			subtitle={hardware ? `Detected: ${hardwareLine(hardware)}` : undefined}
-		/>
-		{#if options.length > 0}
-			<div class="backends">
-				{#each options as o (o.backend)}
-					<SelectCard
-						variant="compact"
-						selected={o.backend === backend}
-						disabled={!!o.reason}
-						onclick={() => (backendChosen = o.backend)}
-					>
-						<span class="backend-name"
-							>{backendLabel(o.backend)}{o.variant ? ` ${o.variant}` : ''}</span
+			{:else if !releasesLoaded}
+				<div class="selector" aria-busy="true">
+					<div class="selector-head">
+						<Eyebrow>VERSION</Eyebrow>
+						<span class="reading" role="status"
+							><Spinner size={10} />Reading releases from GitHub…</span
 						>
-						<span class="meta">{o.reason ?? formatBytes(o.size)}</span>
-					</SelectCard>
-				{/each}
-			</div>
-			<span class="note">For {target?.tag}. A backend your hardware cannot use says why.</span>
-		{:else if problem}
-			<span class="note">The backends of a release come from GitHub, which is not answering.</span>
-		{:else}
-			<span class="note">
-				{target
-					? `Looking up the backends of ${target.tag}…`
-					: 'Pick a version to see its backends.'}
-			</span>
-		{/if}
-	</Panel>
-</div>
+					</div>
+					<div class="selector-row">
+						<span class="shimmer" style:height="38px" style:width="200px"></span>
+						<span class="shimmer select" style:height="38px" style:--delay="0.15s"></span>
+					</div>
+				</div>
+			{/if}
+		</Panel>
+		<Panel flex="1 1 360px" padding="24px" gap={4}>
+			<Eyebrow>UPDATE STEPS</Eyebrow>
+			<UpdateSteps {steps} />
+			{#if upToDate && !job}
+				<span class="ok">Up to date: nothing to do.</span>
+			{/if}
+		</Panel>
+	</Band>
+
+	{#if timeline && active && target && !problem && timeline.items.length > 0}
+		<Timeline {timeline} running={active.tag} targetTag={target.tag} {aheadBy} {keywords} {now} />
+	{/if}
+
+	<div class="bottom">
+		<InstalledBuilds
+			{builds}
+			{switching}
+			{busy}
+			{now}
+			errors={buildErrors}
+			onswitch={switchTo}
+			ondelete={remove}
+		/>
+
+		<Panel flex="1 1 520px" aria-labelledby="co-h">
+			<SectionHeading
+				id="co-h"
+				title="BACKEND"
+				subtitle={hardware ? `Detected: ${hardwareLine(hardware)}` : undefined}
+			/>
+			{#if options.length > 0}
+				<div class="backends">
+					{#each options as o (o.backend)}
+						<SelectCard
+							variant="compact"
+							selected={o.backend === backend}
+							disabled={!!o.reason}
+							onclick={() => (backendChosen = o.backend)}
+						>
+							<span class="backend-name"
+								>{backendLabel(o.backend)}{o.variant ? ` ${o.variant}` : ''}</span
+							>
+							<span class="meta">{o.reason ?? formatBytes(o.size)}</span>
+						</SelectCard>
+					{/each}
+				</div>
+				<span class="note">For {target?.tag}. A backend your hardware cannot use says why.</span>
+			{:else if problem}
+				<span class="note">The backends of a release come from GitHub, which is not answering.</span
+				>
+			{:else}
+				<span class="note">
+					{target
+						? `Looking up the backends of ${target.tag}…`
+						: 'Pick a version to see its backends.'}
+				</span>
+			{/if}
+		</Panel>
+	</div>
+{/if}
 
 <style>
 	.versions {

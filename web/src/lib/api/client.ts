@@ -139,6 +139,8 @@ export interface BuildManifest {
 	supported?: boolean;
 	/** On disk. */
 	size_bytes?: number;
+	/** Where an external build lives (LLAMA_GUI_LLAMA_DIR); absent for one llama-gui installed. */
+	path?: string;
 }
 
 /** A backend a release can be installed with. */

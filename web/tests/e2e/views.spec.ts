@@ -674,6 +674,29 @@ test('Builds shows it is reading releases, and takes a tag under other', async (
 	await expect(page.getByLabel('Release')).toBeVisible();
 });
 
+test('Builds shows an external build and asks GitHub for nothing', async ({ page }) => {
+	const path = '/nix/store/abc-llama-cpp-7000/bin';
+	let asked = 0;
+	await page.route('**/api/v1/builds/available*', (route) => {
+		asked++;
+		return route.abort();
+	});
+	await page.route('**/api/v1/builds', async (route) => {
+		const res = await route.fetch();
+		const body = await res.json();
+		const build = { ...body.builds[0], id: 'external', tag: 'b7000', path, active: true };
+		await route.fulfill({ response: res, json: { builds: [build], active: 'external' } });
+	});
+
+	await page.goto(`${server.url}/ui/builds`);
+	await expect(page.getByRole('heading', { name: 'EXTERNAL BUILD' })).toBeVisible();
+	await expect(page.getByText(path)).toBeVisible();
+	await expect(page.locator('main').getByText('b7000')).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'INSTALLED BUILDS' })).toHaveCount(0);
+	await expect(page.getByRole('button', { name: /check/i })).toHaveCount(0);
+	expect(asked).toBe(0);
+});
+
 test('a rate-limited first install says why and when it tries again', async ({ page }) => {
 	await page.route('**/api/v1/status', async (route) => {
 		const res = await route.fetch();

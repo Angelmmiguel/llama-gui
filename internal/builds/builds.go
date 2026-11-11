@@ -72,6 +72,9 @@ type Options struct {
 	Arch string
 	// MaxExtractBytes bounds the unpacked size of each archive.
 	MaxExtractBytes int64
+	// External is a directory holding a build made elsewhere, such as a Nix package. When set
+	// it is the only build, with id ExternalID, and Dir is left alone.
+	External string
 }
 
 // Manager owns the build directory.
@@ -87,6 +90,10 @@ type Manager struct {
 	arch         string
 	maxExtract   int64
 	stallTimeout time.Duration
+	external     string
+
+	extMu  sync.Mutex
+	extMan *Manifest
 
 	// opMu serializes what reads the active id and then acts on it.
 	opMu sync.Mutex
@@ -108,8 +115,15 @@ func New(o Options) (*Manager, error) {
 	if err != nil {
 		return nil, fmt.Errorf("builds: %w", err)
 	}
+	var external string
+	if o.External != "" {
+		if external, err = filepath.Abs(o.External); err != nil {
+			return nil, fmt.Errorf("builds: %w", err)
+		}
+	}
 	m := &Manager{
 		dir:          dir,
+		external:     external,
 		releases:     o.Releases,
 		hardware:     o.Hardware,
 		store:        o.Store,
@@ -162,6 +176,8 @@ type Manifest struct {
 	Probe       Probe            `json:"probe"`
 	// SizeBytes is what the build takes on disk, measured by List rather than stored.
 	SizeBytes int64 `json:"size_bytes,omitempty"`
+	// Path is where an external build lives, and empty for one installed here.
+	Path string `json:"path,omitempty"`
 }
 
 // BuildID returns the id and directory name of a build.
@@ -208,6 +224,13 @@ func (m *Manager) readManifest(id string) (Manifest, error) {
 // List returns the installed builds, newest first. Directories without a readable manifest are
 // not builds.
 func (m *Manager) List() ([]Manifest, error) {
+	if m.External() {
+		man, err := m.externalManifest()
+		if err != nil {
+			return []Manifest{}, nil
+		}
+		return []Manifest{man}, nil
+	}
 	entries, err := os.ReadDir(m.dir)
 	if errors.Is(err, fs.ErrNotExist) {
 		return []Manifest{}, nil
@@ -251,6 +274,12 @@ func dirSize(dir string) int64 {
 
 // Get returns the manifest of a build.
 func (m *Manager) Get(id string) (Manifest, error) {
+	if m.External() {
+		if id != ExternalID {
+			return Manifest{}, fmt.Errorf("%w: %s", ErrNotFound, id)
+		}
+		return m.externalManifest()
+	}
 	if err := ValidateID(id); err != nil {
 		return Manifest{}, err
 	}
@@ -259,8 +288,12 @@ func (m *Manager) Get(id string) (Manifest, error) {
 
 // ServerBinary returns the absolute path of the build's llama-server.
 func (m *Manager) ServerBinary(id string) (string, error) {
-	if _, err := m.Get(id); err != nil {
+	man, err := m.Get(id)
+	if err != nil {
 		return "", err
+	}
+	if man.Path != "" {
+		return filepath.Join(man.Path, serverBinary), nil
 	}
 	return filepath.Join(m.dir, id, serverBinary), nil
 }
@@ -274,6 +307,12 @@ func (m *Manager) Active(ctx context.Context) (string, error) {
 }
 
 func (m *Manager) active(ctx context.Context) (string, error) {
+	if m.External() {
+		if _, err := m.externalManifest(); err != nil {
+			return "", nil //nolint:nilerr // not probed yet is the same as no build
+		}
+		return ExternalID, nil
+	}
 	id, err := m.store.ActiveBuild(ctx)
 	if err != nil {
 		return "", fmt.Errorf("read active build: %w", err)
@@ -291,6 +330,9 @@ func (m *Manager) active(ctx context.Context) (string, error) {
 // Activate makes the build the active one, if it supports running as a router. Restarting the
 // router on it is up to the caller.
 func (m *Manager) Activate(ctx context.Context, id string) error {
+	if m.External() && id != ExternalID {
+		return fmt.Errorf("%w: cannot switch to %s", ErrExternal, id)
+	}
 	m.opMu.Lock()
 	defer m.opMu.Unlock()
 	man, err := m.Get(id)
@@ -299,6 +341,9 @@ func (m *Manager) Activate(ctx context.Context, id string) error {
 	}
 	if !man.Probe.Router {
 		return fmt.Errorf("%w: %s", ErrUnsupportedBuild, id)
+	}
+	if m.External() {
+		return nil
 	}
 	if err := m.store.SetActiveBuild(ctx, id); err != nil {
 		return fmt.Errorf("activate %s: %w", id, err)
@@ -309,6 +354,9 @@ func (m *Manager) Activate(ctx context.Context, id string) error {
 
 // Remove deletes a build other than the active one.
 func (m *Manager) Remove(ctx context.Context, id string) error {
+	if m.External() {
+		return fmt.Errorf("%w: cannot remove %s", ErrExternal, id)
+	}
 	if err := ValidateID(id); err != nil {
 		return err
 	}
@@ -349,8 +397,11 @@ func (m *Manager) remove(ctx context.Context, id string) error {
 }
 
 // ApplyRetention removes all builds but the active one and the newest keep, and old abandoned
-// downloads. It returns the ids it removed.
+// downloads. It returns the ids it removed. With an external build it does nothing.
 func (m *Manager) ApplyRetention(ctx context.Context, keep int) ([]string, error) {
+	if m.External() {
+		return []string{}, nil
+	}
 	m.opMu.Lock()
 	defer m.opMu.Unlock()
 	active, err := m.active(ctx)
@@ -403,8 +454,11 @@ func (m *Manager) Available(ctx context.Context, rel releases.Release, arch stri
 
 // EnsureFirstInstall installs and activates a build when there is no active one, blocking until
 // it is done, so run it in the background. Version NoInstall does nothing, and backend
-// AutoBackend follows the hardware.
+// AutoBackend follows the hardware. With an external build it probes that instead.
 func (m *Manager) EnsureFirstInstall(ctx context.Context, version, backend string) error {
+	if m.External() {
+		return m.probeExternal(ctx)
+	}
 	if version == NoInstall {
 		return nil
 	}

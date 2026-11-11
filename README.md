@@ -104,6 +104,125 @@ can: SQLite and memory-mapped weights both behave poorly on the array's FUSE
 layer. The *Keep weights in RAM* (`--mlock`) profile option also needs
 `--cap-add=IPC_LOCK --ulimit memlock=-1`.
 
+### NixOS
+
+The flake has a NixOS module. It runs llama-gui as a systemd service with its state in
+`/var/lib/llama-gui`, and the llama.cpp from nixpkgs instead of downloaded releases:
+
+```nix
+{
+  inputs.llama-gui.url = "github:Angelmmiguel/llama-gui";
+
+  outputs = { nixpkgs, llama-gui, ... }: {
+    nixosConfigurations.tower = nixpkgs.lib.nixosSystem {
+      modules = [
+        llama-gui.nixosModules.default
+        {
+          services.llama-gui = {
+            enable = true;
+            host = "0.0.0.0";
+            openFirewall = true;
+          };
+        }
+      ];
+    };
+  };
+}
+```
+
+`services.llama-gui.llamaCppPackage` is the llama.cpp that runs. It becomes the only build: the Builds
+page shows where it comes from, and llama-gui does not install, switch or update builds. A rebuild that
+changes the package restarts the service on it.
+
+The default follows the machine:
+
+| Machine | Default |
+| --- | --- |
+| NVIDIA driver in `services.xserver.videoDrivers` | `pkgs.pkgsCuda.llama-cpp` |
+| `nixpkgs.config.rocmSupport = true` | `pkgs.llama-cpp`, which is then the ROCm build |
+| Anything else | `pkgs.llama-cpp`, for the CPU |
+
+The CUDA build is unfree, which the NVIDIA driver already needs, and is not in the binary cache, so it
+compiles on the machine. It builds for every GPU architecture unless you narrow it, which is much faster:
+
+```nix
+nixpkgs.config.cudaCapabilities = [ "8.9" ];   # an RTX 40xx
+```
+
+On AMD and Intel GPUs nothing is detected, so pick a build. Both of these come from the binary cache:
+
+```nix
+services.llama-gui.llamaCppPackage = pkgs.pkgsRocm.llama-cpp;                       # ROCm, for the GPUs it supports
+services.llama-gui.llamaCppPackage = pkgs.llama-cpp.override { vulkanSupport = true; };  # Vulkan, almost any GPU
+```
+
+For anything nixpkgs does not offer, override a package. `override` changes the inputs of the nixpkgs
+package (`cudaSupport`, `rocmSupport`, `vulkanSupport`, `blasSupport`, …), and `overrideAttrs` the
+derivation itself, such as its CMake flags:
+
+```nix
+services.llama-gui.llamaCppPackage =
+  (pkgs.llama-cpp.override { vulkanSupport = true; }).overrideAttrs (old: {
+    cmakeFlags = old.cmakeFlags ++ [ (lib.cmakeBool "GGML_NATIVE" true) ];
+  });
+```
+
+A newer llama.cpp than nixpkgs has takes its tag and two hashes. Start with `lib.fakeHash`, and the build
+fails naming the right one. nixpkgs bakes its own build number into `llama-server --version`, which is
+what the Builds page shows, so replace it with the `b*` number of that release (its `nightly-tag.txt`
+asset says which). For example:
+
+```nix
+services.llama-gui.llamaCppPackage = pkgs.llama-cpp.overrideAttrs (old: {
+  version = "0.9.0";
+  src = pkgs.fetchFromGitHub {
+    owner = "ggml-org";
+    repo = "llama.cpp";
+    tag = "v0.9.0";
+    hash = lib.fakeHash;
+  };
+  npmDepsHash = lib.fakeHash;  # the web UI under tools/ui
+  cmakeFlags = map (
+    flag: if lib.hasPrefix "-DLLAMA_BUILD_NUMBER" flag then lib.cmakeFeature "LLAMA_BUILD_NUMBER" "12132" else flag
+  ) old.cmakeFlags;
+});
+```
+
+The same works on `pkgs.pkgsCuda.llama-cpp` or any other variant. Whatever the build, its `bin` needs
+`llama-server`, with router mode, and `llama-bench` for the Bench page. Set the option to `null` to download
+releases as the image does, which needs `programs.nix-ld` because those binaries are built for Ubuntu.
+With the NVIDIA driver the module also puts `nvidia-smi` on the service's `PATH`, which llama-gui reads GPUs
+with.
+
+Models and their launch profiles can be declared too, by alias, the model name clients ask for.
+`settings` takes the fields of a profile as the API names them, and `ctx_size` is required:
+
+```nix
+services.llama-gui.profiles."qwen3-8b" = {
+  # Hugging Face repo and quantisation, downloaded when missing.
+  model = "hf.co/unsloth/Qwen3-8B-GGUF:UD-Q4_K_XL";
+  settings = {
+    ctx_size = 32768;
+    flash_attn = "on";
+    cache_type_k = "q8_0";
+    cache_type_v = "q8_0";
+    load_at_start = true;
+  };
+};
+```
+
+After llama-gui starts and on every rebuild that changes them, `llama-gui-profiles.service` runs
+`llama-gui profiles sync`, which downloads what is missing (with the vision projector of a multimodal
+model, which the profile then uses), creates or replaces each profile under the id `nixos-<alias>`, reloads a changed one that is loaded, loads a `load_at_start` one that is not (the router only
+reads that flag when it starts, which can be before the profile exists or its model is downloaded) and
+deletes the `nixos-` profiles no longer declared. Running it again changes nothing. Profiles made in the web app stay, but edits there to declared
+ones are undone on the next run. The rebuild waits for the first download of a model, and once a model is
+on disk a machine without network keeps its profile as it is. For a GGUF put in the models directory some
+other way, give `file`, relative to it, instead of `model`.
+
+The other options are `port`, `modelsDir`, `user`, `group` and `extraPackages`. `settings` takes any variable
+from the table below, and `environmentFile` takes secrets such as `LLAMA_GUI_HF_TOKEN`.
+
 ### Configuration
 
 Everything has a default, and every variable has a matching `serve` flag.
@@ -117,6 +236,7 @@ Everything has a default, and every variable has a matching `serve` flag.
 | `LLAMA_GUI_LLAMA_VERSION` | `stable` | Version to install on first start: `stable`, `nightly`, a tag such as `v0.9.0` or `b12132`, or `none`. After that the Builds page decides. |
 | `LLAMA_GUI_LLAMA_BACKEND` | `auto` | `auto`, `cpu`, `cuda`, `vulkan`, `rocm`, `sycl` or `openvino` |
 | `LLAMA_GUI_LLAMA_UPDATES` | `notify` | `off`, `notify`, or `auto` to install new stable releases when idle |
+| `LLAMA_GUI_LLAMA_DIR` | | Absolute path of a directory with `llama-server` (and `llama-bench`) built elsewhere, such as a Nix package's `bin`. It becomes the only build: the variables above, installs and updates no longer apply. |
 | `LLAMA_GUI_KEEP_BUILDS` | `3` | Builds to keep for rollback; the active build is never removed |
 | `LLAMA_GUI_MODELS_MAX` | `4` | Models loaded at once |
 | `LLAMA_GUI_MEMORY_MARGIN` | `2048` | MiB kept free per GPU before evicting idle models |
@@ -151,6 +271,8 @@ llama-gui models list               GGUF files on disk and whether they are load
 llama-gui models pull <repo> [file...]  download from Hugging Face
 llama-gui models rm <path>          delete a model
 llama-gui models load|unload <id>   control the router
+llama-gui profiles sync --prefix P <manifest.json>
+                                    make the profiles with ids starting with P those of a manifest
 llama-gui healthcheck               used by the image's HEALTHCHECK
 ```
 
@@ -173,6 +295,7 @@ just test          # go test -race and vitest
 just lint          # go vet, golangci-lint, svelte-check, eslint, prettier
 just build         # bin/llama-gui with the web app embedded
 just image         # the container image
+nix build          # the package; `nix flake check` also boots the NixOS module in a VM
 just demo          # the real service over a fake llama-server: emulated GPUs, sample models, traffic
 ```
 

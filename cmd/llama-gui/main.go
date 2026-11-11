@@ -53,6 +53,8 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 		return llamaCommand(args[1:], getenv, stdout, stderr)
 	case "models":
 		return modelsCommand(args[1:], getenv, stdout, stderr)
+	case "profiles":
+		return profilesCommand(args[1:], getenv, stdout, stderr)
 	case "help", "-h", "--help":
 		usage(stdout)
 		return 0
@@ -85,9 +87,15 @@ usage:
   llama-gui models rm <path>     delete a model, by its path in the list
   llama-gui models load <id>
   llama-gui models unload <id>
+  llama-gui profiles sync --prefix P <manifest.json>
+                                 make the profiles whose ids start with P those of the
+                                 manifest, a JSON list of {"model": "hf.co/user/repo:QUANT",
+                                 "profile": {...}}, or of profiles with a model_file: download
+                                 missing models, create, update and reload what changed,
+                                 delete the rest; a rerun changes nothing
   llama-gui version              print the version
 
-status, logs, llama and models talk to the local service; pass --addr or set
+status, logs, llama, models and profiles talk to the local service; pass --addr or set
 LLAMA_GUI_ADDR if it is not on 127.0.0.1:8080.
 
 flags of serve, healthcheck and doctor, each with an environment variable that it overrides:
@@ -99,6 +107,9 @@ flags of serve, healthcheck and doctor, each with an environment variable that i
                                             a tag such as v0.9.0 or b12132, or none (default stable)
   --llama-backend  LLAMA_GUI_LLAMA_BACKEND  auto, cpu, cuda, vulkan, rocm, sycl or openvino (default auto)
   --llama-updates  LLAMA_GUI_LLAMA_UPDATES  off, notify or auto (default notify)
+  --llama-dir      LLAMA_GUI_LLAMA_DIR      directory with a llama.cpp build made elsewhere, such as
+                                            a Nix package; it becomes the only build, with installs
+                                            and updates off
   --keep-builds    LLAMA_GUI_KEEP_BUILDS    builds to keep for rollback (default 3)
   --models-max     LLAMA_GUI_MODELS_MAX     models loaded at once (default 4)
   --memory-margin  LLAMA_GUI_MEMORY_MARGIN  MiB kept free per GPU (default 2048)

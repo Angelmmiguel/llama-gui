@@ -51,6 +51,17 @@ func fakeBuild(t *testing.T, buildsDir, binary, tag string) string {
 	return id
 }
 
+// buildFake compiles the fake server to path.
+func buildFake(t *testing.T, path string) string {
+	t.Helper()
+	build := exec.Command("go", "build", "-o", path, "github.com/Angelmmiguel/llama-gui/cmd/fake-llama-server")
+	build.Env = append(os.Environ(), "CGO_ENABLED=0")
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("go build: %v\n%s", err, out)
+	}
+	return path
+}
+
 type e2e struct {
 	t    *testing.T
 	base string
@@ -118,13 +129,7 @@ func TestEndToEnd(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds and runs the fake server")
 	}
-	dir := t.TempDir()
-	binary := filepath.Join(dir, "fake-llama-server")
-	build := exec.Command("go", "build", "-o", binary, "github.com/Angelmmiguel/llama-gui/cmd/fake-llama-server")
-	build.Env = append(os.Environ(), "CGO_ENABLED=0")
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("go build: %v\n%s", err, out)
-	}
+	binary := buildFake(t, filepath.Join(t.TempDir(), "fake-llama-server"))
 
 	cfg := testConfig(t)
 	firstID := fakeBuild(t, cfg.Builds, binary, "b12132")
@@ -287,5 +292,61 @@ func TestEndToEnd(t *testing.T) {
 	}
 	if len(events) == 0 || events[0].Kind != eventRouterStopped {
 		t.Errorf("newest event: %+v", events[:min(len(events), 1)])
+	}
+}
+
+func TestExternalBuild(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds and runs the fake server")
+	}
+	cfg := testConfig(t)
+	cfg.LlamaDir = t.TempDir()
+	cfg.LlamaVersion, cfg.LlamaUpdates = "stable", "auto"
+	cfg.GitHubAPI = "http://127.0.0.1:1"
+	buildFake(t, filepath.Join(cfg.LlamaDir, "llama-server"))
+
+	ln := listen(t, cfg.Addr)
+	e := e2e{t: t, base: "http://" + ln.Addr().String()}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- run(ctx, cfg, quiet(), ln) }()
+
+	waitFor(t, "the router", func() bool {
+		code, body := e.do(http.MethodGet, "/api/v1/status", "")
+		return code == http.StatusOK && body["state"] == "running"
+	})
+	status := e.get("/api/v1/status")
+	if active, _ := status["active_build"].(map[string]any); active["id"] != builds.ExternalID || status["install_issue"] != nil {
+		t.Errorf("status: %v", status)
+	}
+	if update, _ := status["update"].(map[string]any); update["available"] != false || update["checked_at"] != nil {
+		t.Errorf("updates are checked: %v", update)
+	}
+	list := e.list("/api/v1/builds", "builds")
+	if len(list) != 1 || list[0]["id"] != builds.ExternalID || list[0]["path"] != cfg.LlamaDir || list[0]["active"] != true {
+		t.Errorf("builds: %v", list)
+	}
+	if code, body := e.do(http.MethodPost, "/api/v1/builds/install", `{"version":"stable","backend":"cpu"}`); code != http.StatusConflict {
+		t.Errorf("install: %d %v", code, body)
+	}
+	if code, body := e.do(http.MethodDelete, "/api/v1/builds/"+builds.ExternalID, ""); code != http.StatusConflict {
+		t.Errorf("remove: %d %v", code, body)
+	}
+	if code, body := e.do(http.MethodPost, "/api/v1/builds/"+builds.ExternalID+"/activate", ""); code != http.StatusAccepted {
+		t.Errorf("activate: %d %v", code, body)
+	}
+
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("run: %v", err)
+		}
+	case <-time.After(shutdownTimeout + stopTimeout + 5*time.Second):
+		t.Fatal("run did not stop")
+	}
+	if _, err := os.Stat(cfg.Builds); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the builds directory was touched: %v", err)
 	}
 }
