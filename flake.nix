@@ -1,5 +1,5 @@
 {
-  description = "Development environment for llama-gui";
+  description = "Dashboard and control plane for llama.cpp";
 
   inputs = {
     flake-utils.url = "github:numtide/flake-utils";
@@ -10,9 +10,41 @@
     self,
     flake-utils,
     nixpkgs,
-  }: flake-utils.lib.eachDefaultSystem (system: let
+  }: {
+    # services.llama-gui, with this flake's llama-gui as the default package.
+    nixosModules.default = { lib, pkgs, ... }: {
+      imports = [ ./nix/module.nix ];
+      services.llama-gui.package = lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.default;
+    };
+
+    overlays.default = final: _: {
+      llama-gui = final.callPackage ./nix/package.nix { version = self.shortRev or "dirty"; };
+    };
+  } // flake-utils.lib.eachDefaultSystem (system: let
     pkgs = import nixpkgs { inherit system; };
   in {
+    packages = nixpkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux rec {
+      default = llama-gui;
+      llama-gui = pkgs.callPackage ./nix/package.nix { version = self.shortRev or "dirty"; };
+      # The test double as a llama.cpp build: bin/llama-server, for the module's test.
+      fake-llama-server = llama-gui.overrideAttrs {
+        pname = "fake-llama-server";
+        subPackages = [ "cmd/fake-llama-server" ];
+        preBuild = "";
+        postInstall = "mv $out/bin/fake-llama-server $out/bin/llama-server";
+        meta.mainProgram = "llama-server";
+      };
+    };
+
+    checks = nixpkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+      nixos-module = import ./nix/test.nix {
+        inherit pkgs;
+        module = self.nixosModules.default;
+        package = self.packages.${system}.llama-gui;
+        fakeLlamaServer = self.packages.${system}.fake-llama-server;
+      };
+    };
+
     devShells.default = pkgs.mkShell {
       packages = with pkgs; [
         # Go backend (server + CLI)

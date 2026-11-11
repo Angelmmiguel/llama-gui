@@ -15,6 +15,7 @@ import {
 	defaultBackend,
 	dotPosition,
 	downloadMeta,
+	externalMeta,
 	hardwareLine,
 	installedMeta,
 	installLabel,
@@ -352,5 +353,19 @@ describe('hardwareLine', () => {
 		expect(
 			hardwareLine({ gpus: [], cuda_version: '', render_nodes: [], cpu: { features: [] } })
 		).toBe('No GPU detected');
+	});
+});
+
+describe('externalMeta', () => {
+	const b = {
+		backend: 'cuda',
+		probe: { commit: '2ada83079abc' }
+	} as BuildManifest;
+
+	it('names the commit and backend, and the router only when it is not running', () => {
+		expect(externalMeta(b, 'running')).toBe('2ada830 · CUDA');
+		expect(externalMeta({ ...b, probe: { ...b.probe, commit: '' } }, 'crashed')).toBe(
+			'CUDA · router crashed'
+		);
 	});
 });

@@ -54,7 +54,7 @@ its `reaper` subpackage has no dependencies and is for anything that spawns a pr
 | `internal/telemetry` | 1 s sampler, ring buffers, publish/subscribe hub |
 | `internal/supervisor` | Runs the router process: start, stop, restart with backoff, idle unload |
 | `internal/profiles` | Profile model, validation, rendering to the router's preset INI |
-| `internal/builds` | Installed builds on `/builds`: install, probe, activate, remove, retention |
+| `internal/builds` | Installed builds on `/builds`: install, probe, activate, remove, retention; or the one external build |
 | `internal/releases` | GitHub client: channels, tag classification, assets, compare |
 | `internal/library` | GGUF parsing, scan of `/models`, Hugging Face client, fit estimates, starter catalog, download queue |
 | `internal/hardware` | GPU, CPU, RAM and disk detection |
@@ -63,6 +63,7 @@ its `reaper` subpackage has no dependencies and is for anything that spawns a pr
 | `internal/store` | SQLite: migrations, retention, every query |
 | `internal/config` | Flags and env |
 | `web` | The embedded SPA and its handler |
+| `nix` | The flake's package, NixOS module (`services.llama-gui`, whose `profiles` it applies with `llama-gui profiles sync`) and its VM test |
 
 ## Upstream behaviour
 
@@ -130,6 +131,11 @@ The proxy decides on-demand loading per request: the router runs with `--no-mode
 - `/builds/<tag>-<backend>/`, where `<tag>` is the `b*` tag holding the binaries: extracted release plus
   `manifest.json`, written last so a partial install
   never looks installed. The active build's id is in `kv`, and losing `/builds` only means re-downloading.
+- `LLAMA_GUI_LLAMA_DIR`: an external build, such as a Nix package's `bin`. It is the only build, with id
+  `external` and `path` set in its manifest, which is probed on first start and kept in memory, never
+  written. `/builds` is left alone, installs, switches and removals are a 409 (`builds.ErrExternal`), and the
+  update policy is `off`. The tag is `b` plus the probed build number, and the backend is the first device
+  of `--list-devices` that is not the CPU or BLAS.
 - `/models`: GGUF files in the router's layout (a file, or a directory for multimodal and shards).
 - `/data/preset.ini`: rendered from `profiles`, atomically, on every change. `/data/slots/`: slot saves.
 - Speculative decoding: `--spec-type` is per model and can't be changed per request. `speculative.types` and `speculative.n_max` in a request had no effect on `b12132`, and `llama-bench` has no such flags, so comparing means loading the model twice. A reply's `timings` has `draft_n` and `draft_n_accepted`, `/metrics` has `spec_decode_*`, and a slot has `speculative` and `params["speculative.types"]`.
@@ -140,7 +146,8 @@ The proxy decides on-demand loading per request: the router runs with `--no-mode
 ## Lifecycle
 
 `app.Run`: open the store, detect hardware, resolve the active build, install on first start
-(`LLAMA_GUI_LLAMA_VERSION`, `none` skips, never blocks the HTTP server), render the preset, start the
+(`LLAMA_GUI_LLAMA_VERSION`, `none` skips, never blocks the HTTP server) or probe the external build, retried
+the same way, render the preset, start the
 supervisor, sampler and log pipeline, serve HTTP. A build switch stops the router, restarts it from the new
 build, and reloads what was loaded. Shutdown stops accepting requests, drains, stops the router, closes the store.
 

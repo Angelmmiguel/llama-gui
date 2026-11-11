@@ -76,7 +76,8 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, ln net.Listen
 	detector := hardware.NewDetector(cfg.Data, cfg.Builds, cfg.Models)
 	rel := releases.NewClient(nil, cfg.GitHubAPI, cfg.GitHubToken)
 	mgr, err := builds.New(builds.Options{
-		Dir: cfg.Builds, Releases: rel, Hardware: detector.Detect, Store: builds.StoreFromKV(st), Logger: log,
+		Dir: cfg.Builds, External: cfg.LlamaDir, Releases: rel, Hardware: detector.Detect, Store: builds.StoreFromKV(st),
+		Logger: log,
 	})
 	if err != nil {
 		return err
@@ -183,8 +184,12 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, ln net.Listen
 		return ok && run.State == bench.StateRunning
 	}
 
+	policy := cfg.LlamaUpdates
+	if mgr.External() {
+		policy = builds.UpdatesOff
+	}
 	updates := builds.NewUpdateChecker(builds.UpdateOptions{
-		Policy:   cfg.LlamaUpdates,
+		Policy:   policy,
 		Releases: rel,
 		Active:   mgr.ActiveManifest,
 		Install:  liveB.Install,

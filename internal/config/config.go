@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/url"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
@@ -28,8 +29,11 @@ type Config struct {
 	LlamaVersion string
 	LlamaBackend string
 	LlamaUpdates string
-	KeepBuilds   int
-	ModelsMax    int
+	// LlamaDir holds the binaries of a llama.cpp build made elsewhere, such as a
+	// Nix package. When set it is the only build: nothing is installed or updated.
+	LlamaDir   string
+	KeepBuilds int
+	ModelsMax  int
 	// MemoryMargin is in MiB.
 	MemoryMargin int
 	// LlamaArgs is the raw escape-hatch string, not yet split into arguments.
@@ -94,6 +98,7 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 	version := str("llama-version", "LLAMA_GUI_LLAMA_VERSION", "stable")
 	backend := str("llama-backend", "LLAMA_GUI_LLAMA_BACKEND", "auto")
 	update := str("llama-updates", "LLAMA_GUI_LLAMA_UPDATES", "notify")
+	llamaDir := str("llama-dir", "LLAMA_GUI_LLAMA_DIR", "")
 	keepBuilds := str("keep-builds", "LLAMA_GUI_KEEP_BUILDS", "3")
 	modelsMax := str("models-max", "LLAMA_GUI_MODELS_MAX", "4")
 	margin := str("memory-margin", "LLAMA_GUI_MEMORY_MARGIN", "2048")
@@ -122,6 +127,7 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 		LlamaVersion: *version,
 		LlamaBackend: *backend,
 		LlamaUpdates: *update,
+		LlamaDir:     *llamaDir,
 		LlamaArgs:    *llamaArgs,
 		Capture:      *capture,
 		HFToken:      *hfToken,
@@ -137,6 +143,9 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 		if dir == "" {
 			err = errors.Join(err, fmt.Errorf("%s: must not be empty", name))
 		}
+	}
+	if cfg.LlamaDir != "" && !filepath.IsAbs(cfg.LlamaDir) {
+		err = errors.Join(err, fmt.Errorf("llama-dir: %q is not an absolute path", cfg.LlamaDir))
 	}
 	if !isVersion(cfg.LlamaVersion) {
 		err = errors.Join(err, fmt.Errorf("llama-version: %q is not stable, nightly, none or a tag such as v0.9.0 or b12132", cfg.LlamaVersion))

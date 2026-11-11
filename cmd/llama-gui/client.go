@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -81,10 +80,11 @@ func apiError(resp *http.Response) error {
 	var e struct {
 		Error string `json:"error"`
 	}
+	msg := "the service answered " + resp.Status
 	if json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&e) == nil && e.Error != "" {
-		return errors.New(e.Error)
+		msg = e.Error
 	}
-	return fmt.Errorf("the service answered %s", resp.Status)
+	return &statusError{code: resp.StatusCode, msg: msg}
 }
 
 // clientCommand parses --addr and the command's flags, wherever they are among

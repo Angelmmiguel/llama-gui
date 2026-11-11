@@ -241,10 +241,11 @@ func (c *control) applyActive(ctx context.Context) {
 	}
 }
 
-// firstStart installs a build if there is none and then starts the router. It
-// blocks for as long as the download takes, so it runs in the background. A failed
-// install is retried, because the usual causes pass: GitHub's rate limit is shared by
-// everyone behind an address, and a server often boots before its network.
+// firstStart installs a build if there is none, or probes the external one, and then
+// starts the router. It blocks for as long as the download takes, so it runs in the
+// background. A failed install is retried, because the usual causes pass: GitHub's rate
+// limit is shared by everyone behind an address, and a server often boots before its
+// network.
 func (c *control) firstStart(ctx context.Context, version, backend string) {
 	before, _ := c.mgr.Active(ctx)
 	if backend != builds.AutoBackend {
@@ -265,7 +266,11 @@ func (c *control) firstStart(ctx context.Context, version, backend string) {
 			Error: err.Error(), RateLimited: errors.Is(err, releases.ErrRateLimited), RetryAt: time.Now().Add(delay),
 		})
 		if attempt == 0 {
-			c.pipe.Event(eventBuildInstallFailed, logs.SeverityError, "Installing "+version+" failed", map[string]string{"version": version, "error": err.Error()})
+			what := "Installing " + version
+			if c.mgr.External() {
+				what = "Probing the external build"
+			}
+			c.pipe.Event(eventBuildInstallFailed, logs.SeverityError, what+" failed", map[string]string{"version": version, "error": err.Error()})
 			// With no build this leaves the router stopped, with the reason in its status.
 			c.startIfBuilt(ctx)
 		}
@@ -280,8 +285,10 @@ func (c *control) firstStart(ctx context.Context, version, backend string) {
 		}
 	}
 	if after, _ := c.mgr.Active(ctx); after != before && after != "" {
-		c.pipe.Event(eventBuildInstalled, logs.SeverityInfo, "Installed "+after, map[string]string{"build": after})
-		c.applyRetention(ctx)
+		if !c.mgr.External() {
+			c.pipe.Event(eventBuildInstalled, logs.SeverityInfo, "Installed "+after, map[string]string{"build": after})
+			c.applyRetention(ctx)
+		}
 		c.applyActive(ctx)
 	}
 	c.startIfBuilt(ctx)

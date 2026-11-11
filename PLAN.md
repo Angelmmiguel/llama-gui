@@ -288,6 +288,9 @@ Order keeps a usable product at each step: M3 is already a working managed llama
 - [ ] `unraid/llama-gui.xml` and icon, with all variables, three paths, port and GPU notes
 - [ ] README check: follow the deployment section on a real Unraid box, for NVIDIA and CPU
 - [ ] Optional: multi-arch image (arm64 prebuilts exist)
+- [x] Nix package and NixOS module, running an overridable `llama-cpp` package as an external build
+- [x] Declarative profiles in the NixOS module, applied idempotently by `llama-gui profiles sync`
+- [ ] README check: try the module on a real NixOS box with CUDA
 
 ### Quality gates for every milestone
 

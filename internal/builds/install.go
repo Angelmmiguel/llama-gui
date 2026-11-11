@@ -110,6 +110,9 @@ func (j *job) updateDone(done int64, now time.Time) {
 // resolves the release and its assets first, so a bad request fails here and not in the job.
 // ctx only covers that part; the job lasts until it ends, Cancel or Close.
 func (m *Manager) Install(ctx context.Context, version, backend string) (Job, error) {
+	if m.External() {
+		return Job{}, fmt.Errorf("%w: cannot install %s", ErrExternal, version)
+	}
 	if err := ValidateBackend(backend); err != nil {
 		return Job{}, err
 	}

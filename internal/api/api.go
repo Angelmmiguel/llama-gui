@@ -323,7 +323,7 @@ func (a *api) fail(w http.ResponseWriter, err error) {
 	case errors.Is(err, store.ErrNotFound), errors.Is(err, builds.ErrNotFound), errors.Is(err, builds.ErrJobNotFound),
 		errors.Is(err, releases.ErrNotFound), errors.Is(err, builds.ErrNoAsset), errors.Is(err, bench.ErrModel):
 		status = http.StatusNotFound
-	case errors.Is(err, store.ErrConflict), errors.Is(err, builds.ErrActiveBuild), errors.Is(err, builds.ErrUnsupportedBuild),
+	case errors.Is(err, store.ErrConflict), errors.Is(err, builds.ErrActiveBuild), errors.Is(err, builds.ErrExternal), errors.Is(err, builds.ErrUnsupportedBuild),
 		errors.Is(err, supervisor.ErrNoBuild), errors.Is(err, bench.ErrBusy), errors.Is(err, bench.ErrNotRunning), errors.Is(err, bench.ErrUnsupported):
 		status = http.StatusConflict
 	case errors.Is(err, errNotRunning), errors.Is(err, builds.ErrClosed), errors.Is(err, supervisor.ErrStopped):

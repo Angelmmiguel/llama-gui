@@ -7,6 +7,7 @@ import type {
 } from '$lib/api/client';
 import { ApiError } from '$lib/api/client';
 import { formatBytes } from '$lib/format';
+import { backendLabel } from '$lib/monitor/overview';
 
 export type Channel = 'stable' | 'nightly';
 
@@ -209,6 +210,17 @@ export function installedMeta(b: BuildManifest, now: number, rollback: boolean):
 		`installed ${ago(b.installed_at, now)}`,
 		b.probe.commit ? b.probe.commit.slice(0, 7) : '',
 		rollback ? 'kept for rollback' : ''
+	]
+		.filter(Boolean)
+		.join(' · ');
+}
+
+/** The line under an external build: its commit, backend and the router when not running. */
+export function externalMeta(b: BuildManifest, routerState: string): string {
+	return [
+		b.probe.commit ? b.probe.commit.slice(0, 7) : '',
+		`${backendLabel(b.backend)}${b.variant ? ` ${b.variant}` : ''}`,
+		routerState === 'running' ? '' : `router ${routerState}`
 	]
 		.filter(Boolean)
 		.join(' · ');
